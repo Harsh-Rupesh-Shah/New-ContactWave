@@ -8,6 +8,7 @@ import UserLogin from './pages/UserLogin';
 import ResetPassword from './pages/ResetPassword';
 import AdminDashboard from './pages/AdminDashboard';
 import UserDashboard from './pages/UserDashboard';
+import SpreadsheetSetup from './pages/SpreadsheetSetup'; // Import the new component
 import ProtectedRoute from './components/ProtectedRoute';
 import { AuthProvider } from './context/AuthContext';
 import { LoaderProvider } from './context/LoaderContext';
@@ -25,7 +26,7 @@ function App() {
             <Route path="/login/admin" element={<AdminLogin />} />
             <Route path="/login" element={<UserLogin />} />
             <Route path="/reset-password" element={<ResetPassword />} />
-            
+
             {/* Protected Routes */}
             <Route
               path="/admin/dashboard"
@@ -43,7 +44,15 @@ function App() {
                 </ProtectedRoute>
               }
             />
-            
+            <Route
+              path="/spreadsheet-setup"
+              element={
+                <ProtectedRoute>
+                  <SpreadsheetSetup />
+                </ProtectedRoute>
+              }
+            />
+
             {/* Default Route - Redirect to User Registration */}
             <Route path="/" element={<Navigate to="/register" />} />
           </Routes>

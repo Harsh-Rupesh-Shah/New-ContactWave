@@ -21,7 +21,8 @@ function UserLogin() {
     try {
       // Store email and password temporarily with purpose
       localStorage.setItem('tempLoginData', JSON.stringify({ email: formData.email, password: formData.password, isAdmin: false, purpose: 'login' }));
-  
+      localStorage.setItem('userEmail', formData.email); // Store email for spreadsheet setup
+
       navigate('/verify-code', {
         state: {
           purpose: 'login',
@@ -34,8 +35,6 @@ function UserLogin() {
       alert(error.response?.data?.message || 'Login failed');
     }
   };
-  
-
 
   const handleForgotPassword = async () => {
     try {
