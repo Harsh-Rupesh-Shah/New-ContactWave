@@ -8,12 +8,17 @@ import { sendSecurityCode, sendPasswordResetCode } from './emailService.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import cookieParser from 'cookie-parser';
 
 dotenv.config();
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: 'http://localhost:5173',
+  credentials: true
+}));
 app.use(express.json());
+app.use(cookieParser());
 
 const PORT = process.env.PORT || 3001;
 
@@ -91,6 +96,66 @@ async function ensureHeaders(spreadsheetId, isAdmin) {
   }
 }
 
+// Function to ensure Spreadsheet IDs sheet exists
+async function ensureSpreadsheetIdsSheet(spreadsheetId) {
+  try {
+    // Try to get the Spreadsheet IDs sheet
+    await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: 'Spreadsheet IDs!A1',
+    });
+  } catch (error) {
+    // Create the sheet if it doesn't exist
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      resource: {
+        requests: [
+          {
+            addSheet: {
+              properties: {
+                title: 'Spreadsheet IDs',
+                gridProperties: {
+                  rowCount: 1000,
+                  columnCount: 4,
+                },
+              },
+            },
+          },
+        ],
+      },
+    });
+
+    // Add headers
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: 'Spreadsheet IDs!A1:D1',
+      valueInputOption: 'RAW',
+      resource: {
+        values: [['Unique ID', 'User Email', 'Spreadsheet ID', 'Spreadsheet Name']],
+      },
+    });
+  }
+}
+
+// Function to get next available ID for Spreadsheet IDs sheet
+async function getNextSpreadsheetId(spreadsheetId) {
+  try {
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: 'Spreadsheet IDs!A:A',
+    });
+
+    const values = response.data.values || [];
+    if (values.length <= 1) return 1; // If only header exists
+
+    const ids = values.slice(1).map(row => parseInt(row[0])).filter(id => !isNaN(id));
+    return ids.length > 0 ? Math.max(...ids) + 1 : 1;
+  } catch (error) {
+    console.error('Error getting next spreadsheet ID:', error);
+    throw error;
+  }
+}
+
 const extractSpreadsheetId = (url) => {
   const matches = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
   return matches ? matches[1] : null;
@@ -161,24 +226,21 @@ app.post('/api/register/user', async (req, res) => {
 app.post('/api/verify-code', async (req, res) => {
   try {
     const { code, email, isAdmin, purpose } = req.body;
-    console.log('Verification request received:', { code, email, isAdmin, purpose }); // Debugging log
+    console.log('Verification request received:', { code, email, isAdmin, purpose });
 
     if (purpose === 'registration') {
-      // Handle registration verification
       if (!pendingRegistrations.has(email)) {
         return res.status(400).json({ message: 'No pending registration found for this email.' });
       }
 
       const userData = pendingRegistrations.get(email);
-      console.log('User data from pending registrations:', userData); // Debugging log
+      console.log('User data from pending registrations:', userData);
 
       if (isAdmin) {
-        // Admin registration verification
         if (userData.securityCode !== code) {
           return res.status(400).json({ message: 'Invalid security code' });
         }
 
-        // Append admin data to the admin sheet
         await sheets.spreadsheets.values.append({
           spreadsheetId: process.env.ADMIN_SHEET_ID,
           range: 'Sheet1',
@@ -199,13 +261,11 @@ app.post('/api/verify-code', async (req, res) => {
           },
         });
 
-        // Increment the ID counter
         idCounters.set(process.env.ADMIN_SHEET_ID, userData.uniqueId + 1);
 
         pendingRegistrations.delete(email);
         return res.json({ success: true, message: 'Admin verification successful. Registration completed.' });
       } else {
-        // Normal user registration verification
         const adminData = await sheets.spreadsheets.values.get({
           spreadsheetId: process.env.ADMIN_SHEET_ID,
           range: 'Sheet1',
@@ -216,9 +276,9 @@ app.post('/api/verify-code', async (req, res) => {
         let assignedSecurityCode = null;
 
         for (let i = 1; i < adminRows.length; i++) {
-          if (adminRows[i][9] === code) { // Check if the security code matches any admin's code
-            assignedSpreadsheetId = adminRows[i][7]; // Get the admin's spreadsheet ID
-            assignedSecurityCode = adminRows[i][9]; // Get the correct security code
+          if (adminRows[i][9] === code) {
+            assignedSpreadsheetId = adminRows[i][7];
+            assignedSecurityCode = adminRows[i][9];
             break;
           }
         }
@@ -227,7 +287,8 @@ app.post('/api/verify-code', async (req, res) => {
           return res.status(400).json({ message: 'Invalid security code' });
         }
 
-        // Append normal user data to the assigned admin's spreadsheet
+        await ensureSpreadsheetIdsSheet(assignedSpreadsheetId);
+
         await sheets.spreadsheets.values.append({
           spreadsheetId: assignedSpreadsheetId,
           range: 'Sheet1',
@@ -247,16 +308,13 @@ app.post('/api/verify-code', async (req, res) => {
           },
         });
 
-        // Increment the ID counter
         idCounters.set(assignedSpreadsheetId, userData.uniqueId + 1);
 
         pendingRegistrations.delete(email);
         return res.json({ success: true, message: 'User verification successful. Registration completed.' });
       }
     } else if (purpose === 'login') {
-      // Handle login verification
       if (isAdmin) {
-        // Admin login verification
         const adminData = await sheets.spreadsheets.values.get({
           spreadsheetId: process.env.ADMIN_SHEET_ID,
           range: 'Sheet1',
@@ -269,15 +327,20 @@ app.post('/api/verify-code', async (req, res) => {
           return res.status(400).json({ message: 'Invalid email or security code' });
         }
 
-        // Verify password
         const passwordMatch = await bcrypt.compare(req.body.password, userRow[8]);
         if (!passwordMatch) {
           return res.status(401).json({ message: 'Invalid password' });
         }
 
-        return res.json({ success: true, message: 'Admin login successful.' });
+        const token = jwt.sign({ email, isAdmin }, process.env.JWT_SECRET);
+        res.cookie('spreadsheetId', userRow[7], { httpOnly: true });
+        return res.json({ 
+          success: true, 
+          message: 'Admin login successful.',
+          token,
+          spreadsheetId: userRow[7]
+        });
       } else {
-        // Normal user login verification
         const adminData = await sheets.spreadsheets.values.get({
           spreadsheetId: process.env.ADMIN_SHEET_ID,
           range: 'Sheet1',
@@ -288,9 +351,9 @@ app.post('/api/verify-code', async (req, res) => {
         let assignedSecurityCode = null;
 
         for (let i = 1; i < adminRows.length; i++) {
-          if (adminRows[i][9] === code) { // Check if the security code matches any admin's code
-            assignedSpreadsheetId = adminRows[i][7]; // Get the admin's spreadsheet ID
-            assignedSecurityCode = adminRows[i][9]; // Get the correct security code
+          if (adminRows[i][9] === code) {
+            assignedSpreadsheetId = adminRows[i][7];
+            assignedSecurityCode = adminRows[i][9];
             break;
           }
         }
@@ -299,7 +362,8 @@ app.post('/api/verify-code', async (req, res) => {
           return res.status(400).json({ message: 'Invalid security code' });
         }
 
-        // Verify user credentials in the assigned spreadsheet
+        await ensureSpreadsheetIdsSheet(assignedSpreadsheetId);
+
         const userData = await sheets.spreadsheets.values.get({
           spreadsheetId: assignedSpreadsheetId,
           range: 'Sheet1',
@@ -311,19 +375,25 @@ app.post('/api/verify-code', async (req, res) => {
           return res.status(400).json({ message: 'Invalid email or security code' });
         }
 
-        // Verify password
         const passwordMatch = await bcrypt.compare(req.body.password, userRow[7]);
         if (!passwordMatch) {
           return res.status(401).json({ message: 'Invalid password' });
         }
 
-        return res.json({ success: true, message: 'User login successful.' });
+        const token = jwt.sign({ email, isAdmin }, process.env.JWT_SECRET);
+        res.cookie('spreadsheetId', assignedSpreadsheetId, { httpOnly: true });
+        return res.json({ 
+          success: true, 
+          message: 'User login successful.',
+          token,
+          spreadsheetId: assignedSpreadsheetId
+        });
       }
     } else {
       return res.status(400).json({ message: 'Invalid purpose' });
     }
   } catch (error) {
-    console.error('Verification error:', error); // Debugging log
+    console.error('Verification error:', error);
     res.status(500).json({ error: error.message || 'Verification failed' });
   }
 });
@@ -427,6 +497,7 @@ app.post('/api/login', async (req, res) => {
       }
 
       const token = jwt.sign({ email, isAdmin }, process.env.JWT_SECRET);
+      res.cookie('spreadsheetId', userRow[7], { httpOnly: true });
       return res.json({ success: true, token });
     } else {
       // User login
@@ -456,6 +527,7 @@ app.post('/api/login', async (req, res) => {
       }
 
       const token = jwt.sign({ email, isAdmin }, process.env.JWT_SECRET);
+      res.cookie('spreadsheetId', userSpreadsheetId, { httpOnly: true });
       return res.json({ success: true, token });
     }
   } catch (error) {
@@ -466,39 +538,38 @@ app.post('/api/login', async (req, res) => {
 app.post('/api/spreadsheet-setup', async (req, res) => {
   try {
     const { email, spreadsheetUrl, spreadsheetName } = req.body;
-    const spreadsheetId = extractSpreadsheetId(spreadsheetUrl);
+    const newSpreadsheetId = extractSpreadsheetId(spreadsheetUrl);
 
-    if (!spreadsheetId) {
+    if (!newSpreadsheetId) {
       return res.status(400).json({ error: 'Invalid Google Spreadsheet URL' });
     }
 
-    // Share the spreadsheet with the service account
-    await shareSpreadsheet(spreadsheetId);
+    // Get the user's assigned spreadsheet ID from cookies
+    const userSpreadsheetId = req.cookies.spreadsheetId;
+    if (!userSpreadsheetId) {
+      return res.status(400).json({ error: 'No spreadsheet ID found. Please login again.' });
+    }
 
-    // Ensure headers in the new spreadsheet
-    await ensureHeaders(spreadsheetId, false);
+    // Share the new spreadsheet with the service account
+    await shareSpreadsheet(newSpreadsheetId);
 
-    // Add the spreadsheet ID and name to the "Spreadsheet ID" sheet
+    // Get next available ID for the spreadsheet entry
+    const nextId = await getNextSpreadsheetId(userSpreadsheetId);
+
+    // Add the spreadsheet ID and name to the "Spreadsheet IDs" sheet
     await sheets.spreadsheets.values.append({
-      spreadsheetId: process.env.ADMIN_SHEET_ID,
-      range: 'Spreadsheet ID',
+      spreadsheetId: userSpreadsheetId,
+      range: 'Spreadsheet IDs',
       valueInputOption: 'RAW',
       resource: {
-        values: [[email, spreadsheetId, spreadsheetName]],
+        values: [[nextId, email, newSpreadsheetId, spreadsheetName]],
       },
     });
 
-    // Add a unique ID column to the new spreadsheet
-    await sheets.spreadsheets.values.append({
-      spreadsheetId,
-      range: 'Sheet1',
-      valueInputOption: 'RAW',
-      resource: {
-        values: [['Unique ID']],
-      },
+    res.json({ 
+      success: true, 
+      message: `Spreadsheet "${spreadsheetName}" has been added successfully.` 
     });
-
-    res.json({ success: true, message: 'Spreadsheet setup successful.' });
   } catch (error) {
     console.error('Spreadsheet setup error:', error);
     res.status(500).json({ error: error.message || 'Spreadsheet setup failed' });
@@ -508,16 +579,27 @@ app.post('/api/spreadsheet-setup', async (req, res) => {
 app.get('/api/spreadsheet-list', async (req, res) => {
   try {
     const { email } = req.query;
+    const userSpreadsheetId = req.cookies.spreadsheetId;
 
+    if (!userSpreadsheetId) {
+      return res.status(400).json({ error: 'No spreadsheet ID found. Please login again.' });
+    }
+
+    // Get spreadsheet list from the correct spreadsheet
     const data = await sheets.spreadsheets.values.get({
-      spreadsheetId: process.env.ADMIN_SHEET_ID,
-      range: 'Spreadsheet ID',
+      spreadsheetId: userSpreadsheetId,
+      range: 'Spreadsheet IDs',
     });
 
-    const spreadsheetList = data.data.values.filter(row => row[0] === email).map(row => ({
-      id: row[1],
-      name: row[2],
-    }));
+    const spreadsheetList = data.data.values
+      ? data.data.values
+          .slice(1) // Skip header row
+          .filter(row => row[1] === email)
+          .map(row => ({
+            id: row[2], // Spreadsheet ID
+            name: row[3], // Spreadsheet Name
+          }))
+      : [];
 
     res.json({ success: true, spreadsheetList });
   } catch (error) {

@@ -3,48 +3,60 @@ import { useNavigate } from 'react-router-dom';
 import { Shield } from 'lucide-react';
 import api from '../api/axios';
 import { useAuth } from '../context/AuthContext';
+import Cookies from 'js-cookie';
 
 function SecurityCode() {
   const navigate = useNavigate();
-  const { setRegistrationData } = useAuth();
+  const { setUser } = useAuth();
   const [code, setCode] = useState('');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log('Form submitted with code:', code); // Debugging log
+    console.log('Form submitted with code:', code);
     try {
       const tempLoginData = JSON.parse(localStorage.getItem('tempLoginData'));
       if (!tempLoginData) {
-        console.error('No temporary login data found'); // Debugging log
+        console.error('No temporary login data found');
         alert('No temporary login data found. Please try logging in or registering again.');
         return;
       }
-  
-      console.log('Temp login data:', tempLoginData); // Debugging log
+
+      console.log('Temp login data:', tempLoginData);
       const response = await api.post('/api/verify-code', {
         code,
         email: tempLoginData.email,
         password: tempLoginData.password,
         isAdmin: tempLoginData.isAdmin,
-        purpose: tempLoginData.purpose, // Include purpose in the request
+        purpose: tempLoginData.purpose,
       });
-  
+
       if (response.data.success) {
-        localStorage.setItem('token', response.data.token);
-        setRegistrationData({ email: tempLoginData.email, isAdmin: tempLoginData.isAdmin });
-        navigate(tempLoginData.isAdmin ? '/dashboard/admin' : '/dashboard/user');
+        // Store token in cookies instead of localStorage
+        Cookies.set('token', response.data.token, { expires: 7 }); // Expires in 7 days
+        
+        // Store the spreadsheetId in cookies if available
+        if (response.data.spreadsheetId) {
+          Cookies.set('spreadsheetId', response.data.spreadsheetId, { expires: 7 });
+        }
+        
+        // Set user in context
+        setUser({ 
+          email: tempLoginData.email, 
+          isAdmin: tempLoginData.isAdmin,
+          spreadsheetId: response.data.spreadsheetId
+        });
+
+        // Always redirect to spreadsheet setup after successful verification
+        navigate('/spreadsheet-setup');
       }
     } catch (error) {
-      console.error('Verification error:', error); // Debugging log
+      console.error('Verification error:', error);
       alert(error.response?.data?.message || 'Verification failed');
     } finally {
       // Clear temporary login data
       localStorage.removeItem('tempLoginData');
     }
   };
-  
-  
-  
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-100 to-white flex items-center justify-center p-4">
