@@ -25,7 +25,9 @@
     "lucide-react": "^0.344.0",
     "nodemailer": "^6.9.12",
     "js-cookie": "^3.0.5",
-    "cookie-parser": "^1.4.6"
+    "cookie-parser": "^1.4.6",
+    "pdfkit": "^0.14.0",
+    "json2csv": "^5.0.7"
   },
   "devDependencies": {
     "@types/react": "^18.3.5",

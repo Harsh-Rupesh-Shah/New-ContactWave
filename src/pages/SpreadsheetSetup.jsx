@@ -69,7 +69,7 @@ function SpreadsheetSetup() {
       
       // Show success message for 1.5 seconds before redirecting
       setTimeout(() => {
-        navigate(user?.isAdmin ? '/admin/dashboard' : '/dashboard');
+        navigate('/message-center');
       }, 1500);
     } catch (error) {
       setError(error.response?.data?.message || 'Failed to select spreadsheet');

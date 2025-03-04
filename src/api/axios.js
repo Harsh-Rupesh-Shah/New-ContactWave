@@ -1,6 +1,5 @@
 import axios from 'axios';
 import Cookies from 'js-cookie';
-import { useLoader } from '../context/LoaderContext';
 
 // Create axios instance with base URL
 const api = axios.create({
