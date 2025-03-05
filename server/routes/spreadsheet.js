@@ -47,59 +47,78 @@ router.post('/set-active-spreadsheet', verifyToken, async (req, res) => {
 async function initializeSpreadsheet(spreadsheetId) {
   const sheets = google.sheets({ version: 'v4', auth: await auth.getClient() });
 
-  // Get current headers
-  const response = await sheets.spreadsheets.values.get({
-    spreadsheetId,
-    range: 'Sheet1!1:1',
-  });
-
-  const headers = response.data.values?.[0] || [];
-  
-  // Check if Unique ID column exists
-  if (!headers.some(header => header.toLowerCase().includes('unique'))) {
-    // Get all data
-    const dataResponse = await sheets.spreadsheets.values.get({
+  try {
+    // Get current data
+    const response = await sheets.spreadsheets.values.get({
       spreadsheetId,
       range: 'Sheet1',
     });
 
-    const allData = dataResponse.data.values || [];
-    
-    // Prepare new data with Unique ID column
-    const newData = allData.map((row, index) => {
-      if (index === 0) {
-        return ['Unique ID', ...row];
-      }
-      return [index.toString(), ...row];
-    });
+    const values = response.data.values || [];
+    const hasUniqueIdColumn = values[0] && values[0][0] === 'Unique ID';
 
-    // Update the spreadsheet with new data
-    await sheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: 'Sheet1',
-      valueInputOption: 'RAW',
-      resource: { values: newData },
-    });
+    if (!hasUniqueIdColumn) {
+      // Insert new column at the beginning
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId,
+        resource: {
+          requests: [{
+            insertDimension: {
+              range: {
+                sheetId: 0,
+                dimension: 'COLUMNS',
+                startIndex: 0,
+                endIndex: 1
+              }
+            }
+          }]
+        }
+      });
+
+      // Add header and sequential IDs
+      const newValues = values.map((row, index) => {
+        if (index === 0) {
+          return ['Unique ID', ...row];
+        }
+        return [index.toString(), ...row];
+      });
+
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: 'Sheet1',
+        valueInputOption: 'RAW',
+        resource: { values: newValues }
+      });
+    }
+  } catch (error) {
+    console.error('Error initializing spreadsheet:', error);
+    throw error;
   }
 }
+
 
 // Fetch registrations
 router.get('/fetch-registrations', verifyToken, async (req, res) => {
   try {
-    const activeSpreadsheetId = activeSpreadsheets.get(req.user.email);
+    const { spreadsheetId } = req.query;
     
-    if (!activeSpreadsheetId) {
-      return res.status(400).json({ success: false, message: 'No active spreadsheet set' });
+    if (!spreadsheetId) {
+      return res.status(400).json({ success: false, message: 'Spreadsheet ID is required' });
     }
 
     const sheets = google.sheets({ version: 'v4', auth: await auth.getClient() });
-    
+
     const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: activeSpreadsheetId,
+      spreadsheetId,
       range: 'Sheet1',
     });
 
     const rows = response.data.values || [];
+    
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'No data found in spreadsheet' });
+    }
+
     res.json(rows);
   } catch (error) {
     console.error('Error fetching registrations:', error);

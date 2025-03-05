@@ -9,6 +9,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import cookieParser from 'cookie-parser';
+import spreadsheetRouter from './routes/spreadsheet.js'
 
 dotenv.config();
 
@@ -36,6 +37,8 @@ const auth = new google.auth.GoogleAuth({
 
 const sheets = google.sheets({ version: 'v4', auth });
 const drive = google.drive({ version: 'v3', auth });
+
+app.use('/api', spreadsheetRouter); // Use the router with the '/api' prefix
 
 // Function to share spreadsheet and set permissions
 async function shareSpreadsheet(spreadsheetId) {
@@ -566,15 +569,19 @@ app.post('/api/spreadsheet-setup', async (req, res) => {
       },
     });
 
-    res.json({ 
-      success: true, 
-      message: `Spreadsheet "${spreadsheetName}" has been added successfully.` 
+    // Set the new spreadsheet as the active spreadsheet
+    activeSpreadsheets.set(email, newSpreadsheetId);
+
+    res.json({
+      success: true,
+      message: `Spreadsheet "${spreadsheetName}" has been added successfully.`,
     });
   } catch (error) {
     console.error('Spreadsheet setup error:', error);
     res.status(500).json({ error: error.message || 'Spreadsheet setup failed' });
   }
 });
+
 
 app.get('/api/spreadsheet-list', async (req, res) => {
   try {

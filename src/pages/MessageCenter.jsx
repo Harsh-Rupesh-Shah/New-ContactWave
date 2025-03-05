@@ -36,21 +36,60 @@ function MessageCenter() {
   const [newUserData, setNewUserData] = useState({});
 
   useEffect(() => {
-    fetchSpreadsheetData();
+    const storedSpreadsheetId = localStorage.getItem('selectedSpreadsheetId');
+    console.log('Stored Spreadsheet ID in Message Center:', storedSpreadsheetId); // Add this line
+    if (storedSpreadsheetId) {
+      fetchSpreadsheetData(storedSpreadsheetId);
+    } else {
+      // If no spreadsheet ID is stored, redirect to setup page
+      navigate('/spreadsheet-setup');
+    }
     fetchGroups();
+    checkActiveSpreadsheet();
   }, []);
+  
+  
 
-  const fetchSpreadsheetData = async () => {
+  const checkActiveSpreadsheet = async () => {
     try {
-      const response = await api.get('/api/fetch-registrations');
+      const storedSpreadsheetId = localStorage.getItem('selectedSpreadsheetId');
+      if (storedSpreadsheetId) {
+        setActiveSpreadsheet(storedSpreadsheetId);
+        fetchSpreadsheetData(storedSpreadsheetId);
+      } else {
+        const response = await api.get('/api/get-active-spreadsheet');
+        if (response.data.activeSpreadsheetId) {
+          setActiveSpreadsheet(response.data.activeSpreadsheetId);
+          fetchSpreadsheetData(response.data.activeSpreadsheetId);
+        } else {
+          // Only redirect if there is no active spreadsheet
+          navigate('/spreadsheet-setup');
+        }
+      }
+    } catch (error) {
+      console.error('Error checking active spreadsheet:', error);
+      toast.error('Failed to load spreadsheet data');
+    }
+  };
+  
+  
+
+  const fetchSpreadsheetData = async (spreadsheetId) => {
+    try {
+      const response = await api.get('/api/fetch-registrations', {
+        params: { spreadsheetId } // Ensure spreadsheetId is passed here
+      });
+  
       if (response.data && response.data.length > 0) {
         setHeaders(response.data[0]);
         setSpreadsheetData(response.data.slice(1));
       }
     } catch (error) {
       console.error('Error fetching spreadsheet data:', error);
+      toast.error('Failed to load spreadsheet data');
     }
   };
+  
 
   const fetchGroups = async () => {
     try {
@@ -119,10 +158,10 @@ function MessageCenter() {
     try {
       // Create a new row with the user data
       const newRow = headers.map(header => newUserData[header] || '');
-      
+
       // Add the user to the spreadsheet
       await api.post('/api/add-user', { userData: newUserData });
-      
+
       setShowAddUserModal(false);
       setNewUserData({});
       fetchSpreadsheetData();
@@ -187,7 +226,7 @@ function MessageCenter() {
   };
 
   const filteredData = spreadsheetData.filter(row =>
-    row.some(cell => 
+    row.some(cell =>
       cell.toString().toLowerCase().includes(searchTerm.toLowerCase())
     )
   );
@@ -195,7 +234,7 @@ function MessageCenter() {
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
-      
+
       <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
         {/* Action Buttons */}
         <div className="mb-6 flex flex-wrap gap-4">

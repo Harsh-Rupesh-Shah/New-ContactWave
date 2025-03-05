@@ -66,7 +66,10 @@ function SpreadsheetSetup() {
     try {
       setSelectedSpreadsheet(spreadsheet);
       setSuccessMessage(`Spreadsheet "${spreadsheet.name}" has been selected successfully.`);
-      
+
+      localStorage.setItem('selectedSpreadsheetId', spreadsheet.id);
+      console.log('Selected Spreadsheet ID:', spreadsheet.id); // Add this line
+
       // Show success message for 1.5 seconds before redirecting
       setTimeout(() => {
         navigate('/message-center');
@@ -162,11 +165,10 @@ function SpreadsheetSetup() {
                 <div
                   key={sheet.id}
                   onClick={() => handleSpreadsheetSelect(sheet)}
-                  className={`border rounded-lg p-4 hover:shadow-md transition-all cursor-pointer ${
-                    selectedSpreadsheet?.id === sheet.id
+                  className={`border rounded-lg p-4 hover:shadow-md transition-all cursor-pointer ${selectedSpreadsheet?.id === sheet.id
                       ? 'border-indigo-500 bg-indigo-50'
                       : 'hover:border-indigo-500'
-                  }`}
+                    }`}
                 >
                   <div className="flex items-center space-x-3">
                     <FileSpreadsheet className="h-6 w-6 text-indigo-600" />
