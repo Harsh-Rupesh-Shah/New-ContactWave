@@ -29,7 +29,9 @@
     "pdfkit": "^0.14.0",
     "json2csv": "^5.0.7",
     "@headlessui/react": "^1.7.18",
-    "react-hot-toast": "^2.4.1"
+    "react-hot-toast": "^2.4.1",
+    "xlsx": "^0.18.5",
+    "uuid": "^9.0.1"
   },
   "devDependencies": {
     "@types/react": "^18.3.5",

@@ -10,11 +10,14 @@ import {
   FileDown,
   Search,
   Plus,
-  X
+  X,
+  Check,
+  Info
 } from 'lucide-react';
 import api from '../api/axios';
 import Navbar from '../components/Navbar';
 import { useAuth } from '../context/AuthContext';
+import toast from 'react-hot-toast';
 
 function MessageCenter() {
   const navigate = useNavigate();
@@ -34,52 +37,41 @@ function MessageCenter() {
   const [newCombinedGroupDescription, setNewCombinedGroupDescription] = useState('');
   const [showAddUserModal, setShowAddUserModal] = useState(false);
   const [newUserData, setNewUserData] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [selectAll, setSelectAll] = useState(false);
+  const [showExportDropdown, setShowExportDropdown] = useState(false);
+  const [selectedGroupMembers, setSelectedGroupMembers] = useState([]);
 
   useEffect(() => {
     const storedSpreadsheetId = localStorage.getItem('selectedSpreadsheetId');
-    console.log('Stored Spreadsheet ID in Message Center:', storedSpreadsheetId); // Add this line
     if (storedSpreadsheetId) {
       fetchSpreadsheetData(storedSpreadsheetId);
+      fetchGroups(storedSpreadsheetId);
     } else {
-      // If no spreadsheet ID is stored, redirect to setup page
       navigate('/spreadsheet-setup');
     }
-    fetchGroups();
-    checkActiveSpreadsheet();
-  }, []);
-  
-  
+  }, [navigate]);
 
-  const checkActiveSpreadsheet = async () => {
-    try {
-      const storedSpreadsheetId = localStorage.getItem('selectedSpreadsheetId');
-      if (storedSpreadsheetId) {
-        setActiveSpreadsheet(storedSpreadsheetId);
-        fetchSpreadsheetData(storedSpreadsheetId);
-      } else {
-        const response = await api.get('/api/get-active-spreadsheet');
-        if (response.data.activeSpreadsheetId) {
-          setActiveSpreadsheet(response.data.activeSpreadsheetId);
-          fetchSpreadsheetData(response.data.activeSpreadsheetId);
-        } else {
-          // Only redirect if there is no active spreadsheet
-          navigate('/spreadsheet-setup');
-        }
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (showExportDropdown && !event.target.closest('.export-dropdown')) {
+        setShowExportDropdown(false);
       }
-    } catch (error) {
-      console.error('Error checking active spreadsheet:', error);
-      toast.error('Failed to load spreadsheet data');
-    }
-  };
-  
-  
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showExportDropdown]);
 
   const fetchSpreadsheetData = async (spreadsheetId) => {
     try {
+      setLoading(true);
       const response = await api.get('/api/fetch-registrations', {
-        params: { spreadsheetId } // Ensure spreadsheetId is passed here
+        params: { spreadsheetId }
       });
-  
+
       if (response.data && response.data.length > 0) {
         setHeaders(response.data[0]);
         setSpreadsheetData(response.data.slice(1));
@@ -87,16 +79,29 @@ function MessageCenter() {
     } catch (error) {
       console.error('Error fetching spreadsheet data:', error);
       toast.error('Failed to load spreadsheet data');
+    } finally {
+      setLoading(false);
     }
   };
-  
 
-  const fetchGroups = async () => {
+  const fetchGroups = async (spreadsheetId) => {
     try {
-      const response = await api.get('/api/fetch-groups');
+      const response = await api.get('/api/fetch-groups', {
+        params: { spreadsheetId }
+      });
       setGroups(response.data.groups || []);
     } catch (error) {
       console.error('Error fetching groups:', error);
+      toast.error('Failed to fetch groups');
+    }
+  };
+
+  const handleSelectAll = (checked) => {
+    setSelectAll(checked);
+    if (checked) {
+      setSelectedRows(filteredData);
+    } else {
+      setSelectedRows([]);
     }
   };
 
@@ -113,116 +118,168 @@ function MessageCenter() {
 
   const handleCreateGroup = async () => {
     try {
+      if (!groupName.trim()) {
+        toast.error('Please enter a group name');
+        return;
+      }
+
+      const spreadsheetId = localStorage.getItem('selectedSpreadsheetId');
+      if (!spreadsheetId) {
+        toast.error('No spreadsheet selected');
+        return;
+      }
+
+      if (selectedRows.length === 0) {
+        toast.error('Please select users to add to the group');
+        return;
+      }
+
       const response = await api.post('/api/create-group', {
         groupName,
         description: groupDescription,
-        selectedFields: selectedRows.map(row => ({
-          uniqueId: row[0],
-          // Add other necessary fields
-        }))
+        selectedFields: selectedRows,
+        spreadsheetId
       });
 
       if (response.data.success) {
+        toast.success(`Group "${groupName}" created with ${response.data.groupDetails.memberCount} members`);
         setShowCreateGroupModal(false);
         setGroupName('');
         setGroupDescription('');
         setSelectedRows([]);
-        fetchGroups();
+        fetchGroups(spreadsheetId);
       }
     } catch (error) {
       console.error('Error creating group:', error);
+      toast.error(error.response?.data?.message || 'Failed to create group');
     }
   };
 
   const handleCombineGroups = async () => {
     try {
+      if (!newCombinedGroupName.trim()) {
+        toast.error('Please enter a name for the combined group');
+        return;
+      }
+
+      if (selectedGroups.length < 2) {
+        toast.error('Please select at least two groups to combine');
+        return;
+      }
+
+      const spreadsheetId = localStorage.getItem('selectedSpreadsheetId');
       const response = await api.post('/api/combine-groups', {
         groupIds: selectedGroups,
         newGroupName: newCombinedGroupName,
-        description: newCombinedGroupDescription
+        description: newCombinedGroupDescription,
+        spreadsheetId
       });
 
       if (response.data.success) {
+        toast.success(`Combined group "${newCombinedGroupName}" created with ${response.data.groupDetails.memberCount} members`);
         setShowCombineGroupsModal(false);
         setSelectedGroups([]);
         setNewCombinedGroupName('');
         setNewCombinedGroupDescription('');
-        fetchGroups();
+        fetchGroups(spreadsheetId);
       }
     } catch (error) {
       console.error('Error combining groups:', error);
+      toast.error('Failed to combine groups');
     }
   };
 
   const handleAddUser = async () => {
     try {
-      // Create a new row with the user data
-      const newRow = headers.map(header => newUserData[header] || '');
+      const spreadsheetId = localStorage.getItem('selectedSpreadsheetId');
+      const response = await api.post('/api/add-user', {
+        userData: newUserData,
+        spreadsheetId
+      });
 
-      // Add the user to the spreadsheet
-      await api.post('/api/add-user', { userData: newUserData });
-
-      setShowAddUserModal(false);
-      setNewUserData({});
-      fetchSpreadsheetData();
+      if (response.data.success) {
+        toast.success('User added successfully');
+        setShowAddUserModal(false);
+        setNewUserData({});
+        fetchSpreadsheetData(spreadsheetId);
+      }
     } catch (error) {
       console.error('Error adding user:', error);
+      toast.error('Failed to add user');
     }
   };
 
-  const handleExportPDF = async () => {
+  const handleExport = async (format) => {
     try {
-      const response = await api.get('/api/export-pdf', {
+      const spreadsheetId = localStorage.getItem('selectedSpreadsheetId');
+      const response = await api.get(`/api/export-${format}`, {
+        params: { spreadsheetId },
         responseType: 'blob'
       });
-      const url = window.URL.createObjectURL(new Blob([response.data]));
+      
+      const blob = new Blob([response.data], { 
+        type: format === 'pdf' ? 'application/pdf' : 
+              format === 'csv' ? 'text/csv' : 
+              'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      });
+      const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', 'spreadsheet-data.pdf');
+      link.setAttribute('download', `data.${format}`);
       document.body.appendChild(link);
       link.click();
       link.remove();
+      window.URL.revokeObjectURL(url);
+      
+      toast.success(`Data exported as ${format.toUpperCase()}`);
+      setShowExportDropdown(false);
     } catch (error) {
-      console.error('Error exporting PDF:', error);
-    }
-  };
-
-  const handleExportCSV = async () => {
-    try {
-      const response = await api.get('/api/export-csv', {
-        responseType: 'blob'
-      });
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', 'spreadsheet-data.csv');
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-    } catch (error) {
-      console.error('Error exporting CSV:', error);
+      console.error(`Error exporting ${format}:`, error);
+      toast.error(`Failed to export ${format.toUpperCase()}`);
     }
   };
 
   const handleDeleteUsers = async () => {
-    if (!selectedRows.length) return;
+    if (!selectedRows.length) {
+      toast.error('Please select users to delete');
+      return;
+    }
 
-    if (window.confirm('Are you sure you want to delete the selected users?')) {
+    const confirmDelete = window.confirm(`Are you sure you want to delete ${selectedRows.length} selected user(s)?`);
+    if (confirmDelete) {
       try {
+        const spreadsheetId = localStorage.getItem('selectedSpreadsheetId');
+        if (!spreadsheetId) {
+          toast.error('No spreadsheet selected');
+          return;
+        }
+
         const response = await api.delete('/api/delete-users', {
           data: {
-            userIds: selectedRows.map(row => row[0])
+            userIds: selectedRows.map(row => row[0]),
+            spreadsheetId
           }
         });
 
         if (response.data.success) {
+          toast.success(`Successfully deleted ${response.data.deletedCount} user(s)`);
           setSelectedRows([]);
-          fetchSpreadsheetData();
+          fetchSpreadsheetData(spreadsheetId);
+          fetchGroups(spreadsheetId); // Refresh groups as they might be affected
         }
       } catch (error) {
         console.error('Error deleting users:', error);
+        toast.error(error.response?.data?.message || 'Failed to delete users');
       }
     }
+  };
+
+  const handleGroupSelect = (group) => {
+    setSelectedGroupMembers(group.members);
+    // Highlight the corresponding rows in the main table
+    const memberIds = group.memberIds;
+    const newSelectedRows = spreadsheetData.filter(row => memberIds.includes(row[0]));
+    setSelectedRows(newSelectedRows);
   };
 
   const filteredData = spreadsheetData.filter(row =>
@@ -230,6 +287,14 @@ function MessageCenter() {
       cell.toString().toLowerCase().includes(searchTerm.toLowerCase())
     )
   );
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -288,21 +353,43 @@ function MessageCenter() {
             Delete Selected
           </button>
 
-          <button
-            onClick={handleExportPDF}
-            className="flex items-center px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
-          >
-            <FileDown className="w-5 h-5 mr-2" />
-            Export PDF
-          </button>
-
-          <button
-            onClick={handleExportCSV}
-            className="flex items-center px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
-          >
-            <FileDown className="w-5 h-5 mr-2" />
-            Export CSV
-          </button>
+          {/* Export Dropdown */}
+          <div className="relative export-dropdown">
+            <button
+              onClick={() => setShowExportDropdown(!showExportDropdown)}
+              className="flex items-center px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+            >
+              <FileDown className="w-5 h-5 mr-2" />
+              Export
+            </button>
+            {showExportDropdown && (
+              <div className="absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-10">
+                <div className="py-1" role="menu">
+                  <button
+                    onClick={() => handleExport('pdf')}
+                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                    role="menuitem"
+                  >
+                    Export as PDF
+                  </button>
+                  <button
+                    onClick={() => handleExport('csv')}
+                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                    role="menuitem"
+                  >
+                    Export as CSV
+                  </button>
+                  <button
+                    onClick={() => handleExport('excel')}
+                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                    role="menuitem"
+                  >
+                    Export as Excel
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Search Bar */}
@@ -325,7 +412,12 @@ function MessageCenter() {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Select
+                  <input
+                    type="checkbox"
+                    checked={selectAll}
+                    onChange={(e) => handleSelectAll(e.target.checked)}
+                    className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                  />
                 </th>
                 {headers.map((header, index) => (
                   <th
@@ -401,6 +493,12 @@ function MessageCenter() {
                     className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
                   />
                 </div>
+                <div className="mt-2">
+                  <p className="text-sm text-gray-600 flex items-center">
+                    <Info className="w-4 h-4 mr-1" />
+                    Selected members: {selectedRows.length}
+                  </p>
+                </div>
                 <div className="flex justify-end space-x-3">
                   <button
                     onClick={() => setShowCreateGroupModal(false)}
@@ -444,7 +542,7 @@ function MessageCenter() {
                       value={newUserData[header] || ''}
                       onChange={(e) => setNewUserData({...newUserData, [header]: e.target.value})}
                       className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-                      disabled={header.toLowerCase().includes('unique')} // Disable Unique ID field
+                      disabled={header.toLowerCase().includes('unique')}
                     />
                   </div>
                 ))}
@@ -470,34 +568,72 @@ function MessageCenter() {
         {/* Show Groups Modal */}
         {showGroupsModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-lg p-6 max-w-2xl w-full">
+            <div className="bg-white rounded-lg p-6 max-w-4xl w-full">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-lg font-semibold">Groups</h3>
                 <button
-                  onClick={() => setShowGroupsModal(false)}
+                  onClick={() => {
+                    setShowGroupsModal(false);
+                    setSelectedGroupMembers([]);
+                    setSelectedRows([]);
+                  }}
                   className="text-gray-400 hover:text-gray-500"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
-              <div className="space-y-4 max-h-[60vh] overflow-y-auto">
-                {groups.length === 0 ? (
-                  <p className="text-gray-500 text-center py-4">No groups found</p>
-                ) : (
-                  groups.map((group) => (
-                    <div
-                      key={group.groupId}
-                      className="p-4 border rounded-lg hover:bg-gray-50"
-                    >
-                      <h4 className="font-medium">{group.groupName}</h4>
-                      <p className="text-sm text-gray-500">ID: {group.groupId}</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-4 max-h-[60vh] overflow-y-auto">
+                  {groups.length === 0 ? (
+                    <p className="text-gray-500 text-center py-4">No groups found</p>
+                  ) : (
+                    groups.map((group) => (
+                      <div
+                        key={group.groupId}
+                        onClick={() => handleGroupSelect(group)}
+                        className={`p-4 border rounded-lg hover:bg-gray-50 cursor-pointer transition-colors ${
+                          selectedGroupMembers === group.members ? 'border-indigo-500 bg-indigo-50' : ''
+                        }`}
+                      >
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <h4 className="font-medium text-gray-900">{group.groupName}</h4>
+                            <p className="text-sm text-gray-500 mt-1">{group.description}</p>
+                          </div>
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
+                            {group.memberCount} members
+                          </span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <div className="border-l pl-6">
+                  <h4 className="font-medium text-gray-900 mb-4">Selected Group Members</h4>
+                  {selectedGroupMembers.length > 0 ? (
+                    <div className="space-y-2 max-h-[50vh] overflow-y-auto">
+                      {selectedGroupMembers.map((member) => (
+                        <div key={member.id} className="flex items-center space-x-2 p-2 bg-gray-50 rounded">
+                          <Check className="w-4 h-4 text-green-500" />
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">{member.name}</p>
+                            <p className="text-xs text-gray-500">{member.email}</p>
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  ))
-                )}
+                  ) : (
+                    <p className="text-gray-500 text-center py-4">Select a group to view members</p>
+                  )}
+                </div>
               </div>
               <div className="flex justify-end mt-4">
                 <button
-                  onClick={() => setShowGroupsModal(false)}
+                  onClick={() => {
+                    setShowGroupsModal(false);
+                    setSelectedGroupMembers([]);
+                    setSelectedRows([]);
+                  }}
                   className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700"
                 >
                   Close
@@ -543,6 +679,9 @@ function MessageCenter() {
                         />
                         <label htmlFor={`group-${group.groupId}`} className="ml-2 text-sm text-gray-700">
                           {group.groupName}
+                          <span className="ml-2 text-xs text-gray-500">
+                            ({group.memberCount} members)
+                          </span>
                         </label>
                       </div>
                     ))}
