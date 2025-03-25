@@ -33,6 +33,7 @@ function SecurityCode() {
       if (response.data.success) {
         // Store token in cookies instead of localStorage
         Cookies.set('token', response.data.token, { expires: 7 }); // Expires in 7 days
+        console.log('Token set:', Cookies.get('token')); // Debugging log
         
         // Store the spreadsheetId in cookies if available
         if (response.data.spreadsheetId) {

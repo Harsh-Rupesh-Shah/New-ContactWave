@@ -615,6 +615,7 @@ app.get('/api/spreadsheet-list', async (req, res) => {
   }
 });
 
+
 async function getAdminSpreadsheetId() {
   const adminData = await sheets.spreadsheets.values.get({
     spreadsheetId: process.env.ADMIN_SHEET_ID,
@@ -727,306 +728,306 @@ app.post('/api/add-user', async (req, res) => {
   }
 });
 
-// Create Group
-app.post('/api/create-group', async (req, res) => {
-  try {
-    const { groupName, description, selectedFields, spreadsheetId } = req.body;
+// // Create Group
+// app.post('/api/create-group', async (req, res) => {
+//   try {
+//     const { groupName, description, selectedFields, spreadsheetId } = req.body;
 
-    if (!spreadsheetId) {
-      return res.status(400).json({ message: 'Spreadsheet ID is required' });
-    }
+//     if (!spreadsheetId) {
+//       return res.status(400).json({ message: 'Spreadsheet ID is required' });
+//     }
 
-    // Ensure Groups sheet exists
-    await ensureGroupsSheetExists(spreadsheetId);
+//     // Ensure Groups sheet exists
+//     await ensureGroupsSheetExists(spreadsheetId);
 
-    // Get next group ID
-    const groupsResponse = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: 'Groups!A:A',
-    });
+//     // Get next group ID
+//     const groupsResponse = await sheets.spreadsheets.values.get({
+//       spreadsheetId,
+//       range: 'Groups!A:A',
+//     });
     
-    const groupIds = groupsResponse.data.values || [];
-    const nextGroupId = groupIds.length; // Simple incremental ID
+//     const groupIds = groupsResponse.data.values || [];
+//     const nextGroupId = groupIds.length; // Simple incremental ID
 
-    const now = new Date().toISOString();
+//     const now = new Date().toISOString();
 
-    // Add group to Groups sheet
-    await sheets.spreadsheets.values.append({
-      spreadsheetId,
-      range: 'Groups!A:F',
-      valueInputOption: 'RAW',
-      resource: {
-        values: [[
-          nextGroupId,
-          groupName,
-          description,
-          JSON.stringify(selectedFields.map(field => field[0])), // Use the ID from the first column
-          now,
-          now,
-        ]],
-      },
-    });
+//     // Add group to Groups sheet
+//     await sheets.spreadsheets.values.append({
+//       spreadsheetId,
+//       range: 'Groups!A:F',
+//       valueInputOption: 'RAW',
+//       resource: {
+//         values: [[
+//           nextGroupId,
+//           groupName,
+//           description,
+//           JSON.stringify(selectedFields.map(field => field[0])), // Use the ID from the first column
+//           now,
+//           now,
+//         ]],
+//       },
+//     });
 
-    res.json({ success: true, groupId: nextGroupId });
-  } catch (error) {
-    console.error('Error creating group:', error);
-    res.status(500).json({ message: 'Failed to create group' });
-  }
-});
+//     res.json({ success: true, groupId: nextGroupId });
+//   } catch (error) {
+//     console.error('Error creating group:', error);
+//     res.status(500).json({ message: 'Failed to create group' });
+//   }
+// });
 
-// Fetch Groups
-app.get('/api/fetch-groups', async (req, res) => {
-  try {
-    const { spreadsheetId } = req.query;
+// // Fetch Groups
+// app.get('/api/fetch-groups', async (req, res) => {
+//   try {
+//     const { spreadsheetId } = req.query;
 
-    if (!spreadsheetId) {
-      return res.status(400).json({ message: 'Spreadsheet ID is required' });
-    }
+//     if (!spreadsheetId) {
+//       return res.status(400).json({ message: 'Spreadsheet ID is required' });
+//     }
 
-    // Ensure Groups sheet exists
-    await ensureGroupsSheetExists(spreadsheetId);
+//     // Ensure Groups sheet exists
+//     await ensureGroupsSheetExists(spreadsheetId);
 
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: 'Groups!A2:F', // Skip header row
-    });
+//     const response = await sheets.spreadsheets.values.get({
+//       spreadsheetId,
+//       range: 'Groups!A2:F', // Skip header row
+//     });
 
-    const rows = response.data.values || [];
-    const groups = rows.map(row => ({
-      groupId: row[0],
-      groupName: row[1],
-      description: row[2],
-      memberIds: JSON.parse(row[3] || '[]'),
-      createdAt: row[4],
-      updatedAt: row[5],
-    }));
+//     const rows = response.data.values || [];
+//     const groups = rows.map(row => ({
+//       groupId: row[0],
+//       groupName: row[1],
+//       description: row[2],
+//       memberIds: JSON.parse(row[3] || '[]'),
+//       createdAt: row[4],
+//       updatedAt: row[5],
+//     }));
 
-    res.json({ groups });
-  } catch (error) {
-    console.error('Error fetching groups:', error);
-    res.status(500).json({ message: 'Failed to fetch groups' });
-  }
-});
+//     res.json({ groups });
+//   } catch (error) {
+//     console.error('Error fetching groups:', error);
+//     res.status(500).json({ message: 'Failed to fetch groups' });
+//   }
+// });
 
-// Combine Groups
-app.post('/api/combine-groups', async (req, res) => {
-  try {
-    const { groupIds, newGroupName, description, spreadsheetId } = req.body;
+// // Combine Groups
+// app.post('/api/combine-groups', async (req, res) => {
+//   try {
+//     const { groupIds, newGroupName, description, spreadsheetId } = req.body;
 
-    if (!spreadsheetId) {
-      return res.status(400).json({ message: 'Spreadsheet ID is required' });
-    }
+//     if (!spreadsheetId) {
+//       return res.status(400).json({ message: 'Spreadsheet ID is required' });
+//     }
 
-    // Ensure Groups sheet exists
-    await ensureGroupsSheetExists(spreadsheetId);
+//     // Ensure Groups sheet exists
+//     await ensureGroupsSheetExists(spreadsheetId);
 
-    // Get existing groups
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: 'Groups!A2:F',
-    });
+//     // Get existing groups
+//     const response = await sheets.spreadsheets.values.get({
+//       spreadsheetId,
+//       range: 'Groups!A2:F',
+//     });
 
-    const rows = response.data.values || [];
-    const groups = rows.filter(row => groupIds.includes(row[0]));
+//     const rows = response.data.values || [];
+//     const groups = rows.filter(row => groupIds.includes(row[0]));
     
-    // Combine member IDs
-    const combinedMemberIds = new Set();
-    groups.forEach(group => {
-      const memberIds = JSON.parse(group[3] || '[]');
-      memberIds.forEach(id => combinedMemberIds.add(id));
-    });
+//     // Combine member IDs
+//     const combinedMemberIds = new Set();
+//     groups.forEach(group => {
+//       const memberIds = JSON.parse(group[3] || '[]');
+//       memberIds.forEach(id => combinedMemberIds.add(id));
+//     });
 
-    const now = new Date().toISOString();
+//     const now = new Date().toISOString();
 
-    // Create new group
-    const newGroupId = rows.length + 1;
-    await sheets.spreadsheets.values.append({
-      spreadsheetId,
-      range: 'Groups!A:F',
-      valueInputOption: 'RAW',
-      resource: {
-        values: [[
-          newGroupId.toString(),
-          newGroupName,
-          description,
-          JSON.stringify(Array.from(combinedMemberIds)),
-          now,
-          now,
-        ]],
-      },
-    });
+//     // Create new group
+//     const newGroupId = rows.length + 1;
+//     await sheets.spreadsheets.values.append({
+//       spreadsheetId,
+//       range: 'Groups!A:F',
+//       valueInputOption: 'RAW',
+//       resource: {
+//         values: [[
+//           newGroupId.toString(),
+//           newGroupName,
+//           description,
+//           JSON.stringify(Array.from(combinedMemberIds)),
+//           now,
+//           now,
+//         ]],
+//       },
+//     });
 
-    res.json({ success: true, groupId: newGroupId });
-  } catch (error) {
-    console.error('Error combining groups:', error);
-    res.status(500).json({ message: 'Failed to combine groups' });
-  }
-});
+//     res.json({ success: true, groupId: newGroupId });
+//   } catch (error) {
+//     console.error('Error combining groups:', error);
+//     res.status(500).json({ message: 'Failed to combine groups' });
+//   }
+// });
 
-// Delete Users
-app.delete('/api/delete-users', async (req, res) => {
-  try {
-    const { userIds, spreadsheetId } = req.body;
+// // Delete Users
+// app.delete('/api/delete-users', async (req, res) => {
+//   try {
+//     const { userIds, spreadsheetId } = req.body;
     
-    if (!spreadsheetId) {
-      return res.status(400).json({ message: 'Spreadsheet ID is required' });
-    }
+//     if (!spreadsheetId) {
+//       return res.status(400).json({ message: 'Spreadsheet ID is required' });
+//     }
 
-    if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
-      return res.status(400).json({ message: 'User IDs are required' });
-    }
+//     if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
+//       return res.status(400).json({ message: 'User IDs are required' });
+//     }
 
-    // Get the current data
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: 'Sheet1',
-    });
+//     // Get the current data
+//     const response = await sheets.spreadsheets.values.get({
+//       spreadsheetId,
+//       range: 'Sheet1',
+//     });
 
-    const rows = response.data.values;
-    if (!rows) {
-      return res.status(404).json({ message: 'No data found' });
-    }
+//     const rows = response.data.values;
+//     if (!rows) {
+//       return res.status(404).json({ message: 'No data found' });
+//     }
 
-    // Filter out the rows to be deleted
-    const updatedRows = rows.filter((row, index) => {
-      if (index === 0) return true; // Keep header row
-      return !userIds.includes(row[0]); // Remove rows with matching IDs
-    });
+//     // Filter out the rows to be deleted
+//     const updatedRows = rows.filter((row, index) => {
+//       if (index === 0) return true; // Keep header row
+//       return !userIds.includes(row[0]); // Remove rows with matching IDs
+//     });
 
-    // Update the spreadsheet
-    await sheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: 'Sheet1',
-      valueInputOption: 'RAW',
-      resource: { values: updatedRows },
-    });
+//     // Update the spreadsheet
+//     await sheets.spreadsheets.values.update({
+//       spreadsheetId,
+//       range: 'Sheet1',
+//       valueInputOption: 'RAW',
+//       resource: { values: updatedRows },
+//     });
 
-    res.json({ success: true, message: 'Users deleted successfully' });
-  } catch (error) {
-    console.error('Error deleting users:', error);
-    res.status(500).json({ message: 'Failed to delete users' });
-  }
-});
+//     res.json({ success: true, message: 'Users deleted successfully' });
+//   } catch (error) {
+//     console.error('Error deleting users:', error);
+//     res.status(500).json({ message: 'Failed to delete users' });
+//   }
+// });
 
-// Export PDF
-app.get('/api/export-pdf', async (req, res) => {
-  try {
-    const { spreadsheetId } = req.query;
+// // Export PDF
+// app.get('/api/export-pdf', async (req, res) => {
+//   try {
+//     const { spreadsheetId } = req.query;
 
-    if (!spreadsheetId) {
-      return res.status(400).json({ message: 'Spreadsheet ID is required' });
-    }
+//     if (!spreadsheetId) {
+//       return res.status(400).json({ message: 'Spreadsheet ID is required' });
+//     }
 
-    // Get spreadsheet data
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: 'Sheet1',
-    });
+//     // Get spreadsheet data
+//     const response = await sheets.spreadsheets.values.get({
+//       spreadsheetId,
+//       range: 'Sheet1',
+//     });
 
-    const rows = response.data.values || [];
+//     const rows = response.data.values || [];
 
-    // Create PDF
-    const doc = new PDFDocument();
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', 'attachment; filename=data.pdf');
-    doc.pipe(res);
+//     // Create PDF
+//     const doc = new PDFDocument();
+//     res.setHeader('Content-Type', 'application/pdf');
+//     res.setHeader('Content-Disposition', 'attachment; filename=data.pdf');
+//     doc.pipe(res);
 
-    // Add content to PDF
-    doc.fontSize(16).text('Spreadsheet Data', { align: 'center' });
-    doc.moveDown();
+//     // Add content to PDF
+//     doc.fontSize(16).text('Spreadsheet Data', { align: 'center' });
+//     doc.moveDown();
 
-    // Add table headers
-    const headers = rows[0] || [];
-    let yPos = doc.y;
-    headers.forEach((header, i) => {
-      doc.text(header, 50 + (i * 100), yPos);
-    });
+//     // Add table headers
+//     const headers = rows[0] || [];
+//     let yPos = doc.y;
+//     headers.forEach((header, i) => {
+//       doc.text(header, 50 + (i * 100), yPos);
+//     });
 
-    // Add table data
-    rows.slice(1).forEach((row, rowIndex) => {
-      yPos = doc.y + 20;
-      row.forEach((cell, cellIndex) => {
-        doc.text(cell, 50 + (cellIndex * 100), yPos);
-      });
-      doc.moveDown();
-    });
+//     // Add table data
+//     rows.slice(1).forEach((row, rowIndex) => {
+//       yPos = doc.y + 20;
+//       row.forEach((cell, cellIndex) => {
+//         doc.text(cell, 50 + (cellIndex * 100), yPos);
+//       });
+//       doc.moveDown();
+//     });
 
-    doc.end();
-  } catch (error) {
-    console.error('Error exporting PDF:', error);
-    res.status(500).json({ message: 'Failed to export PDF' });
-  }
-});
+//     doc.end();
+//   } catch (error) {
+//     console.error('Error exporting PDF:', error);
+//     res.status(500).json({ message: 'Failed to export PDF' });
+//   }
+// });
 
-// Export CSV
-app.get('/api/export-csv', async (req, res) => {
-  try {
-    const { spreadsheetId } = req.query;
+// // Export CSV
+// app.get('/api/export-csv', async (req, res) => {
+//   try {
+//     const { spreadsheetId } = req.query;
 
-    if (!spreadsheetId) {
-      return res.status(400).json({ message: 'Spreadsheet ID is required' });
-    }
+//     if (!spreadsheetId) {
+//       return res.status(400).json({ message: 'Spreadsheet ID is required' });
+//     }
 
-    // Get spreadsheet data
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: 'Sheet1',
-    });
+//     // Get spreadsheet data
+//     const response = await sheets.spreadsheets.values.get({
+//       spreadsheetId,
+//       range: 'Sheet1',
+//     });
 
-    const rows = response.data.values || [];
+//     const rows = response.data.values || [];
     
-    // Convert to CSV
-    const parser = new Parser();
-    const csv = parser.parse(rows.slice(1).map(row => {
-      const obj = {};
-      rows[0].forEach((header, i) => {
-        obj[header] = row[i];
-      });
-      return obj;
-    }));
+//     // Convert to CSV
+//     const parser = new Parser();
+//     const csv = parser.parse(rows.slice(1).map(row => {
+//       const obj = {};
+//       rows[0].forEach((header, i) => {
+//         obj[header] = row[i];
+//       });
+//       return obj;
+//     }));
 
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', 'attachment; filename=data.csv');
-    res.send(csv);
-  } catch (error) {
-    console.error('Error exporting CSV:', error);
-    res.status(500).json({ message: 'Failed to export CSV' });
-  }
-});
+//     res.setHeader('Content-Type', 'text/csv');
+//     res.setHeader('Content-Disposition', 'attachment; filename=data.csv');
+//     res.send(csv);
+//   } catch (error) {
+//     console.error('Error exporting CSV:', error);
+//     res.status(500).json({ message: 'Failed to export CSV' });
+//   }
+// });
 
-// Export Excel
-app.get('/api/export-excel', async (req, res) => {
-  try {
-    const { spreadsheetId } = req.query;
+// // Export Excel
+// app.get('/api/export-excel', async (req, res) => {
+//   try {
+//     const { spreadsheetId } = req.query;
 
-    if (!spreadsheetId) {
-      return res.status(400).json({ message: 'Spreadsheet ID is required' });
-    }
+//     if (!spreadsheetId) {
+//       return res.status(400).json({ message: 'Spreadsheet ID is required' });
+//     }
 
-    // Get spreadsheet data
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: 'Sheet1',
-    });
+//     // Get spreadsheet data
+//     const response = await sheets.spreadsheets.values.get({
+//       spreadsheetId,
+//       range: 'Sheet1',
+//     });
 
-    const rows = response.data.values || [];
+//     const rows = response.data.values || [];
 
-    // Create Excel workbook
-    const workbook = XLSX.utils.book_new();
-    const worksheet = XLSX.utils.aoa_to_sheet(rows);
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Data');
+//     // Create Excel workbook
+//     const workbook = XLSX.utils.book_new();
+//     const worksheet = XLSX.utils.aoa_to_sheet(rows);
+//     XLSX.utils.book_append_sheet(workbook, worksheet, 'Data');
 
-    // Generate buffer
-    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+//     // Generate buffer
+//     const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
 
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', 'attachment; filename=data.xlsx');
-    res.send(buffer);
-  } catch (error) {
-    console.error('Error exporting Excel:', error);
-    res.status(500).json({ message: 'Failed to export Excel' });
-  }
-});
+//     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+//     res.setHeader('Content-Disposition', 'attachment; filename=data.xlsx');
+//     res.send(buffer);
+//   } catch (error) {
+//     console.error('Error exporting Excel:', error);
+//     res.status(500).json({ message: 'Failed to export Excel' });
+//   }
+// });
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);

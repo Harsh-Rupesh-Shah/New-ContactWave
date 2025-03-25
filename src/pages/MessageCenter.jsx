@@ -41,6 +41,11 @@ function MessageCenter() {
   const [selectAll, setSelectAll] = useState(false);
   const [showExportDropdown, setShowExportDropdown] = useState(false);
   const [selectedGroupMembers, setSelectedGroupMembers] = useState([]);
+  const [showDeleteGroupsModal, setShowDeleteGroupsModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingRow, setEditingRow] = useState(null);
+  const [editingRowIndex, setEditingRowIndex] = useState(null);
+  const [showAddToGroupsModal, setShowAddToGroupsModal] = useState(false);
 
   useEffect(() => {
     const storedSpreadsheetId = localStorage.getItem('selectedSpreadsheetId');
@@ -189,6 +194,27 @@ function MessageCenter() {
     }
   };
 
+  const handleDeleteGroups = async () => {
+    try {
+      const spreadsheetId = localStorage.getItem('selectedSpreadsheetId');
+      const response = await api.delete('/api/delete-groups', {
+        data: {
+          groupIds: selectedGroups,
+          spreadsheetId
+        }
+      });
+
+      if (response.data.success) {
+        toast.success(`Successfully deleted ${response.data.deletedCount} group(s)`);
+        setSelectedGroups([]);
+        fetchGroups(spreadsheetId); // Refresh the groups list
+      }
+    } catch (error) {
+      console.error('Error deleting groups:', error);
+      toast.error(error.response?.data?.message || 'Failed to delete groups');
+    }
+  };
+
   const handleAddUser = async () => {
     try {
       const spreadsheetId = localStorage.getItem('selectedSpreadsheetId');
@@ -216,11 +242,11 @@ function MessageCenter() {
         params: { spreadsheetId },
         responseType: 'blob'
       });
-      
-      const blob = new Blob([response.data], { 
-        type: format === 'pdf' ? 'application/pdf' : 
-              format === 'csv' ? 'text/csv' : 
-              'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+
+      const blob = new Blob([response.data], {
+        type: format === 'pdf' ? 'application/pdf' :
+          format === 'csv' ? 'text/csv' :
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
       });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -230,7 +256,7 @@ function MessageCenter() {
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
-      
+
       toast.success(`Data exported as ${format.toUpperCase()}`);
       setShowExportDropdown(false);
     } catch (error) {
@@ -264,7 +290,7 @@ function MessageCenter() {
         if (response.data.success) {
           toast.success(`Successfully deleted ${response.data.deletedCount} user(s)`);
           setSelectedRows([]);
-          fetchSpreadsheetData(spreadsheetId);
+          fetchSpreadsheetData(spreadsheetId); // Refresh the data
           fetchGroups(spreadsheetId); // Refresh groups as they might be affected
         }
       } catch (error) {
@@ -273,20 +299,36 @@ function MessageCenter() {
       }
     }
   };
+  ;
 
-  const handleGroupSelect = (group) => {
-    setSelectedGroupMembers(group.members);
-    // Highlight the corresponding rows in the main table
-    const memberIds = group.memberIds;
-    const newSelectedRows = spreadsheetData.filter(row => memberIds.includes(row[0]));
-    setSelectedRows(newSelectedRows);
+  const handleGroupCheckboxChange = (groupId) => {
+    setSelectedGroups(prevSelectedGroups => {
+      if (prevSelectedGroups.includes(groupId)) {
+        return prevSelectedGroups.filter(id => id !== groupId);
+      } else {
+        return [...prevSelectedGroups, groupId];
+      }
+    });
   };
 
-  const filteredData = spreadsheetData.filter(row =>
-    row.some(cell =>
-      cell.toString().toLowerCase().includes(searchTerm.toLowerCase())
-    )
-  );
+  const filteredData = () => {
+    if (selectedGroups.length > 0) {
+      const selectedMemberIds = selectedGroups.flatMap(groupId => {
+        const group = groups.find(group => group.groupId === groupId);
+        return group ? group.memberIds : [];
+      });
+
+      const uniqueMemberIds = Array.from(new Set(selectedMemberIds));
+
+      return spreadsheetData.filter(row => uniqueMemberIds.includes(row[0]));
+    }
+
+    return spreadsheetData.filter(row =>
+      row.some(cell =>
+        cell.toString().toLowerCase().includes(searchTerm.toLowerCase())
+      )
+    );
+  };
 
   if (loading) {
     return (
@@ -303,6 +345,14 @@ function MessageCenter() {
       <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
         {/* Action Buttons */}
         <div className="mb-6 flex flex-wrap gap-4">
+
+          <button
+            className="flex items-center px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700"
+          >
+            <Combine className="w-5 h-5 mr-2" />
+            Send Message
+          </button>
+
           <button
             onClick={() => setShowCreateGroupModal(true)}
             disabled={!selectedRows.length}
@@ -310,6 +360,15 @@ function MessageCenter() {
           >
             <Group className="w-5 h-5 mr-2" />
             Create Group
+          </button>
+
+          <button
+            onClick={() => setShowAddToGroupsModal(true)}
+            disabled={!selectedRows.length}
+            className="flex items-center px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <UserPlus className="w-5 h-5 mr-2" />
+            Add to Existing Groups
           </button>
 
           <button
@@ -326,6 +385,22 @@ function MessageCenter() {
           >
             <Users className="w-5 h-5 mr-2" />
             Show Groups
+          </button>
+
+          <button
+            onClick={() => {
+              if (selectedGroups.length === 0) {
+                setShowGroupsModal(true);
+                toast.error('Please select groups to delete');
+              } else {
+                setShowDeleteGroupsModal(true);
+              }
+            }}
+            disabled={selectedGroups.length === 0}
+            className="flex items-center px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Trash2 className="w-5 h-5 mr-2" />
+            Delete Groups
           </button>
 
           <button
@@ -407,54 +482,71 @@ function MessageCenter() {
         </div>
 
         {/* Data Table */}
-        <div className="bg-white rounded-lg shadow overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  <input
-                    type="checkbox"
-                    checked={selectAll}
-                    onChange={(e) => handleSelectAll(e.target.checked)}
-                    className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-                  />
-                </th>
-                {headers.map((header, index) => (
-                  <th
-                    key={index}
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                  >
-                    {header}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {filteredData.map((row, rowIndex) => (
-                <tr
-                  key={rowIndex}
-                  className={selectedRows.some(r => r[0] === row[0]) ? 'bg-indigo-50' : ''}
-                >
-                  <td className="px-6 py-4 whitespace-nowrap">
+        <div className="bg-white rounded-lg shadow overflow-hidden border border-gray-200">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-10">
                     <input
                       type="checkbox"
-                      checked={selectedRows.some(r => r[0] === row[0])}
-                      onChange={() => handleRowSelect(row)}
+                      checked={selectAll}
+                      onChange={(e) => handleSelectAll(e.target.checked)}
                       className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
                     />
-                  </td>
-                  {row.map((cell, cellIndex) => (
-                    <td
-                      key={cellIndex}
-                      className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
+                  </th>
+                  {headers.map((header, index) => (
+                    <th
+                      key={index}
+                      className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
                     >
-                      {cell}
-                    </td>
+                      {header}
+                    </th>
                   ))}
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">
+                    ACTIONS
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {filteredData().map((row, rowIndex) => (
+                  <tr
+                    key={rowIndex}
+                    className={rowIndex % 2 === 0 ? 'bg-white hover:bg-gray-50' : 'bg-gray-50 hover:bg-gray-100'}
+                  >
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <input
+                        type="checkbox"
+                        checked={selectedRows.some(r => r[0] === row[0])}
+                        onChange={() => handleRowSelect(row)}
+                        className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                      />
+                    </td>
+                    {row.map((cell, cellIndex) => (
+                      <td
+                        key={cellIndex}
+                        className="px-4 py-3 whitespace-nowrap text-sm text-gray-700"
+                      >
+                        {cell}
+                      </td>
+                    ))}
+                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                      <button
+                        onClick={() => {
+                          setEditingRow([...row]);
+                          setEditingRowIndex(rowIndex);
+                          setShowEditModal(true);
+                        }}
+                        className="px-3 py-1 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors text-xs font-medium"
+                      >
+                        Edit
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
 
         {/* Create Group Modal */}
@@ -518,6 +610,90 @@ function MessageCenter() {
           </div>
         )}
 
+        {/* Edit Row Modal */}
+        {showEditModal && editingRow && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-lg p-6 max-w-md w-full max-h-[80vh] overflow-y-auto">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-semibold">Edit Entry</h3>
+                <button
+                  onClick={() => setShowEditModal(false)}
+                  className="text-gray-400 hover:text-gray-500"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="space-y-4">
+                {headers.map((header, index) => (
+                  <div key={index}>
+                    {header === 'Unique ID' ? (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">
+                          {header}
+                        </label>
+                        <input
+                          type="text"
+                          value={editingRow[index]}
+                          readOnly
+                          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm bg-gray-100 cursor-not-allowed"
+                        />
+                      </div>
+                    ) : (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">
+                          {header}
+                        </label>
+                        <input
+                          type="text"
+                          value={editingRow[index] || ''}
+                          onChange={(e) => {
+                            const newRow = [...editingRow];
+                            newRow[index] = e.target.value;
+                            setEditingRow(newRow);
+                          }}
+                          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                        />
+                      </div>
+                    )}
+                  </div>
+                ))}
+                <div className="flex justify-end space-x-3 pt-4">
+                  <button
+                    onClick={() => setShowEditModal(false)}
+                    className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-500"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={async () => {
+                      try {
+                        const spreadsheetId = localStorage.getItem('selectedSpreadsheetId');
+                        const response = await api.put('/api/update-row', {
+                          spreadsheetId,
+                          rowData: editingRow,
+                          rowIndex: editingRowIndex
+                        });
+
+                        if (response.data.success) {
+                          toast.success('Entry updated successfully');
+                          fetchSpreadsheetData(spreadsheetId);
+                          setShowEditModal(false);
+                        }
+                      } catch (error) {
+                        console.error('Error updating row:', error);
+                        toast.error('Failed to update entry');
+                      }
+                    }}
+                    className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
+                  >
+                    Update
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Add User Modal */}
         {showAddUserModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -540,7 +716,7 @@ function MessageCenter() {
                     <input
                       type="text"
                       value={newUserData[header] || ''}
-                      onChange={(e) => setNewUserData({...newUserData, [header]: e.target.value})}
+                      onChange={(e) => setNewUserData({ ...newUserData, [header]: e.target.value })}
                       className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
                       disabled={header.toLowerCase().includes('unique')}
                     />
@@ -558,6 +734,151 @@ function MessageCenter() {
                     className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
                   >
                     Add User
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+{showAddToGroupsModal && (
+  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+    <div className="bg-white rounded-lg p-6 max-w-md w-full">
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="text-lg font-semibold">Add Users to Groups</h3>
+        <button
+          onClick={() => {
+            setShowAddToGroupsModal(false);
+            setSelectedGroups([]);
+          }}
+          className="text-gray-400 hover:text-gray-500"
+        >
+          <X className="w-5 h-5" />
+        </button>
+      </div>
+      <div className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Select Groups to Add Users To
+          </label>
+          <div className="max-h-60 overflow-y-auto border rounded-md p-2">
+            {groups.map((group) => (
+              <div key={group.groupId} className="flex items-center mb-2">
+                <input
+                  type="checkbox"
+                  id={`add-group-${group.groupId}`}
+                  checked={selectedGroups.includes(group.groupId)}
+                  onChange={() => handleGroupCheckboxChange(group.groupId)}
+                  className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                />
+                <label htmlFor={`add-group-${group.groupId}`} className="ml-2 text-sm text-gray-700">
+                  {group.groupName}
+                  <span className="ml-2 text-xs text-gray-500">
+                    ({group.memberCount} members)
+                  </span>
+                </label>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="mt-2">
+          <p className="text-sm text-gray-600">
+            Selected users: {selectedRows.length}
+          </p>
+          <p className="text-sm text-gray-600">
+            Selected groups: {selectedGroups.length}
+          </p>
+        </div>
+        <div className="flex justify-end space-x-3">
+          <button
+            onClick={() => {
+              setShowAddToGroupsModal(false);
+              setSelectedGroups([]);
+            }}
+            className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-500"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={async () => {
+              try {
+                const spreadsheetId = localStorage.getItem('selectedSpreadsheetId');
+                const userIds = selectedRows.map(row => row[0]);
+                
+                const response = await api.post('/api/add-users-to-groups', {
+                  userIds,
+                  groupIds: selectedGroups,
+                  spreadsheetId
+                });
+
+                if (response.data.success) {
+                  toast.success(`Added ${selectedRows.length} user(s) to ${selectedGroups.length} group(s)`);
+                  setShowAddToGroupsModal(false);
+                  setSelectedGroups([]);
+                  fetchGroups(spreadsheetId); // Refresh groups
+                }
+              } catch (error) {
+                console.error('Error adding users to groups:', error);
+                toast.error('Failed to add users to groups');
+              }
+            }}
+            disabled={selectedGroups.length === 0}
+            className="px-4 py-2 bg-teal-600 text-white rounded-md hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Add Users
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+)}
+
+        {/* Delete Groups Confirmation Modal */}
+        {showDeleteGroupsModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-lg p-6 max-w-md w-full">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-semibold">Delete Groups</h3>
+                <button
+                  onClick={() => setShowDeleteGroupsModal(false)}
+                  className="text-gray-400 hover:text-gray-500"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="space-y-4">
+                <p className="text-gray-700">
+                  Are you sure you want to delete {selectedGroups.length} selected group(s)?
+                </p>
+                <div className="max-h-40 overflow-y-auto border rounded-md p-2">
+                  {groups
+                    .filter(group => selectedGroups.includes(group.groupId))
+                    .map(group => (
+                      <div key={group.groupId} className="flex items-center mb-2">
+                        <div className="ml-2 text-sm">
+                          <span className="font-medium">{group.groupName}</span>
+                          <span className="ml-2 text-xs text-gray-500">
+                            ({group.memberCount} members)
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+                <div className="flex justify-end space-x-3">
+                  <button
+                    onClick={() => setShowDeleteGroupsModal(false)}
+                    className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-500"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={async () => {
+                      await handleDeleteGroups();
+                      setShowDeleteGroupsModal(false);
+                    }}
+                    className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+                  >
+                    Delete Groups
                   </button>
                 </div>
               </div>
@@ -590,40 +911,55 @@ function MessageCenter() {
                     groups.map((group) => (
                       <div
                         key={group.groupId}
-                        onClick={() => handleGroupSelect(group)}
-                        className={`p-4 border rounded-lg hover:bg-gray-50 cursor-pointer transition-colors ${
-                          selectedGroupMembers === group.members ? 'border-indigo-500 bg-indigo-50' : ''
-                        }`}
+                        className="p-4 border rounded-lg hover:bg-gray-50 cursor-pointer transition-colors flex items-start"
                       >
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <h4 className="font-medium text-gray-900">{group.groupName}</h4>
-                            <p className="text-sm text-gray-500 mt-1">{group.description}</p>
-                          </div>
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
-                            {group.memberCount} members
-                          </span>
+                        <input
+                          type="checkbox"
+                          checked={selectedGroups.includes(group.groupId)}
+                          onChange={() => handleGroupCheckboxChange(group.groupId)}
+                          className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded mr-2"
+                        />
+                        <div>
+                          <h4 className="font-medium text-gray-900">{group.groupName}</h4>
+                          <p className="text-sm text-gray-500 mt-1">{group.description}</p>
                         </div>
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 ml-auto">
+                          {group.memberCount} members
+                        </span>
                       </div>
                     ))
                   )}
                 </div>
                 <div className="border-l pl-6">
                   <h4 className="font-medium text-gray-900 mb-4">Selected Group Members</h4>
-                  {selectedGroupMembers.length > 0 ? (
+                  {selectedGroups.length > 0 ? (
                     <div className="space-y-2 max-h-[50vh] overflow-y-auto">
-                      {selectedGroupMembers.map((member) => (
-                        <div key={member.id} className="flex items-center space-x-2 p-2 bg-gray-50 rounded">
-                          <Check className="w-4 h-4 text-green-500" />
-                          <div>
-                            <p className="text-sm font-medium text-gray-900">{member.name}</p>
-                            <p className="text-xs text-gray-500">{member.email}</p>
-                          </div>
-                        </div>
-                      ))}
+                      <table className="min-w-full divide-y divide-gray-200">
+                        <thead>
+                          <tr>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Name
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Email
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                          {selectedGroups.flatMap(groupId => {
+                            const group = groups.find(group => group.groupId === groupId);
+                            return group ? group.members.map(member => (
+                              <tr key={member.id}>
+                                <td className="px-6 py-4 whitespace-nowrap">{member.name}</td>
+                                <td className="px-6 py-4 whitespace-nowrap">{member.email}</td>
+                              </tr>
+                            )) : [];
+                          })}
+                        </tbody>
+                      </table>
                     </div>
                   ) : (
-                    <p className="text-gray-500 text-center py-4">Select a group to view members</p>
+                    <p className="text-gray-500 text-center py-4">Select groups to view members</p>
                   )}
                 </div>
               </div>
