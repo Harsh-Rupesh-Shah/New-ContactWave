@@ -13,9 +13,14 @@ export const AuthProvider = ({ children }) => {
     if (token) {
       // If token exists, set user from stored data
       const storedUser = Cookies.get('user');
+      const spreadsheetId = Cookies.get('spreadsheetId');
       if (storedUser) {
         try {
-          setUser(JSON.parse(storedUser));
+          const userData = JSON.parse(storedUser);
+          if (spreadsheetId) {
+            userData.spreadsheetId = spreadsheetId;
+          }
+          setUser(userData);
         } catch (error) {
           console.error('Error parsing stored user data:', error);
         }
@@ -27,8 +32,10 @@ export const AuthProvider = ({ children }) => {
     setUser(userData);
     // Store user data in cookies
     Cookies.set('user', JSON.stringify(userData), { expires: 7 });
+    if (userData.spreadsheetId) {
+      Cookies.set('spreadsheetId', userData.spreadsheetId, { expires: 7 });
+    }
   };
-
   const logout = () => {
     setUser(null);
     // Clear cookies

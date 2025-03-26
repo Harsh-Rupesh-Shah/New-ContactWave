@@ -27,7 +27,7 @@ function SpreadsheetSetup() {
 
   useEffect(() => {
     fetchSpreadsheets();
-  }, []);
+  }, [user]); // Add user to dependency array
 
   useEffect(() => {
     if (searchTerm.trim() === '') {
@@ -42,10 +42,20 @@ function SpreadsheetSetup() {
 
   const fetchSpreadsheets = async () => {
     try {
+      // Get spreadsheetId from cookies if not available in user context
+      const spreadsheetId = user?.spreadsheetId || Cookies.get('spreadsheetId');
+      
+      if (!spreadsheetId) {
+        toast.error('No spreadsheet ID found. Please login again.');
+        navigate('/login');
+        return;
+      }
+  
       const response = await api.get('/api/spreadsheet-list', {
         params: { email: user?.email },
         withCredentials: true
       });
+      
       setSpreadsheets(response.data.spreadsheetList || []);
       setFilteredSpreadsheets(response.data.spreadsheetList || []);
     } catch (error) {

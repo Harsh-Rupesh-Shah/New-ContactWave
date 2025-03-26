@@ -728,6 +728,10 @@ app.post('/api/add-user', async (req, res) => {
   }
 });
 
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
+
 // // Create Group
 // app.post('/api/create-group', async (req, res) => {
 //   try {
@@ -1029,6 +1033,3 @@ app.post('/api/add-user', async (req, res) => {
 //   }
 // });
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
