@@ -177,7 +177,7 @@ async function ensureGroupsSheetExists(sheets, spreadsheetId) {
   }
 }
 
-// Fetch registrations
+// Fetch registrations with case-insensitive Unique ID check
 router.get('/fetch-registrations', verifyToken, async (req, res) => {
   try {
     const { spreadsheetId } = req.query;
@@ -188,12 +188,28 @@ router.get('/fetch-registrations', verifyToken, async (req, res) => {
 
     const sheets = google.sheets({ version: 'v4', auth: await auth.getClient() });
 
+    // First, check if Unique ID column exists (case-insensitive)
     const response = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: 'Sheet1!A1:Z1', // Get just the header row
+    });
+
+    const headerRow = response.data.values?.[0] || [];
+    const hasUniqueIdColumn = headerRow.length > 0 && 
+                            headerRow[0].trim().toLowerCase() === 'unique id';
+
+    if (!hasUniqueIdColumn) {
+      // If no Unique ID column, initialize the spreadsheet
+      await initializeSpreadsheetWithUniqueId(sheets, spreadsheetId, headerRow);
+    }
+
+    // Now fetch the full data
+    const fullResponse = await sheets.spreadsheets.values.get({
       spreadsheetId,
       range: 'Sheet1',
     });
 
-    const rows = response.data.values || [];
+    const rows = fullResponse.data.values || [];
     
     if (rows.length === 0) {
       return res.status(404).json({ success: false, message: 'No data found in spreadsheet' });
@@ -206,6 +222,73 @@ router.get('/fetch-registrations', verifyToken, async (req, res) => {
   }
 });
 
+// Helper function to initialize spreadsheet with Unique ID column
+async function initializeSpreadsheetWithUniqueId(sheets, spreadsheetId, existingHeaderRow = []) {
+  try {
+    // Get current data
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: 'Sheet1',
+    });
+
+    const values = response.data.values || [];
+    
+    // Check if we need to insert a new column or just rename existing first column
+    const firstColHeader = values[0]?.[0] || '';
+    const isFirstColumnEmpty = !firstColHeader.trim();
+    
+    if (isFirstColumnEmpty) {
+      // If first column is empty, just rename it
+      values[0][0] = 'Unique ID';
+    } else {
+      // Insert new column at the beginning
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId,
+        resource: {
+          requests: [{
+            insertDimension: {
+              range: {
+                sheetId: 0,
+                dimension: 'COLUMNS',
+                startIndex: 0,
+                endIndex: 1
+              }
+            }
+          }]
+        }
+      });
+    }
+
+    // Prepare new data with Unique ID column
+    const newValues = values.map((row, index) => {
+      if (index === 0) {
+        // For header row
+        if (isFirstColumnEmpty) {
+          return row; // We already updated the first cell
+        }
+        return ['Unique ID', ...row]; // Add header
+      }
+      
+      // For data rows
+      if (isFirstColumnEmpty) {
+        row[0] = index.toString(); // Fill empty first column with ID
+        return row;
+      }
+      return [index.toString(), ...row]; // Add sequential IDs
+    });
+
+    // Update the sheet with new data
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: 'Sheet1',
+      valueInputOption: 'RAW',
+      resource: { values: newValues }
+    });
+  } catch (error) {
+    console.error('Error initializing spreadsheet with Unique ID:', error);
+    throw error;
+  }
+}
 // Create Group
 router.post('/create-group', verifyToken, async (req, res) => {
   try {

@@ -44,18 +44,18 @@ function SpreadsheetSetup() {
     try {
       // Get spreadsheetId from cookies if not available in user context
       const spreadsheetId = user?.spreadsheetId || Cookies.get('spreadsheetId');
-      
+
       if (!spreadsheetId) {
         toast.error('No spreadsheet ID found. Please login again.');
         navigate('/login');
         return;
       }
-  
+
       const response = await api.get('/api/spreadsheet-list', {
         params: { email: user?.email },
         withCredentials: true
       });
-      
+
       setSpreadsheets(response.data.spreadsheetList || []);
       setFilteredSpreadsheets(response.data.spreadsheetList || []);
     } catch (error) {
@@ -71,11 +71,28 @@ function SpreadsheetSetup() {
     setSuccessMessage('');
 
     try {
+      // Validate URL format
+      const urlPattern = /^https:\/\/docs\.google\.com\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/;
+      if (!urlPattern.test(newSpreadsheet.url)) {
+        toast.error('Please enter a valid Google Sheets URL in the format: https://docs.google.com/spreadsheets/d/...');
+        return;
+      }
+
       const matches = newSpreadsheet.url.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
       const spreadsheetId = matches ? matches[1] : null;
 
       if (!spreadsheetId) {
         toast.error('Invalid spreadsheet URL');
+        return;
+      }
+
+      // Check if spreadsheet already exists in local state before making API call
+      const isDuplicate = spreadsheets.some(sheet =>
+        sheet.url === newSpreadsheet.url || sheet.id === spreadsheetId
+      );
+
+      if (isDuplicate) {
+        toast.error('This spreadsheet is already in your list');
         return;
       }
 
@@ -104,7 +121,7 @@ function SpreadsheetSetup() {
       }
     } catch (error) {
       console.error('Error:', error);
-      toast.error(error.response?.data?.message || 'Failed to add spreadsheet');
+      toast.error(error.response?.data?.error || error.response?.data?.message || 'Failed to add spreadsheet');
     } finally {
       setLoading(false);
     }
@@ -166,9 +183,9 @@ function SpreadsheetSetup() {
             <div className="fixed inset-0 transition-opacity" onClick={() => setShowDeleteModal(false)}>
               <div className="absolute inset-0 bg-gray-500 opacity-75"></div>
             </div>
-            
+
             <span className="hidden sm:inline-block sm:align-middle sm:h-screen">&#8203;</span>
-            
+
             <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
               <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
                 <div className="flex justify-between items-start">
@@ -226,6 +243,7 @@ function SpreadsheetSetup() {
                   onChange={(e) => setNewSpreadsheet({ ...newSpreadsheet, url: e.target.value })}
                   placeholder="https://docs.google.com/spreadsheets/d/..."
                   className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-3 px-4 border"
+                  pattern="https://docs\.google\.com/spreadsheets/d/.*"
                   required
                 />
               </div>
@@ -286,11 +304,10 @@ function SpreadsheetSetup() {
                   <div
                     key={sheet.id}
                     onClick={() => handleSpreadsheetSelect(sheet)}
-                    className={`relative border rounded-xl p-5 hover:shadow-md transition-all cursor-pointer ${
-                      selectedSpreadsheet?.id === sheet.id
+                    className={`relative border rounded-xl p-5 hover:shadow-md transition-all cursor-pointer ${selectedSpreadsheet?.id === sheet.id
                         ? 'border-indigo-500 bg-indigo-50'
                         : 'border-gray-200 hover:border-indigo-300'
-                    }`}
+                      }`}
                   >
                     <div className="flex items-center space-x-4">
                       <div className="flex-shrink-0">

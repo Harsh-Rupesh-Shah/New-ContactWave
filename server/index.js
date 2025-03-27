@@ -11,6 +11,7 @@ import { fileURLToPath } from 'url';
 import cookieParser from 'cookie-parser';
 import spreadsheetRouter from './routes/spreadsheet.js'
 
+
 dotenv.config();
 
 const app = express();
@@ -540,8 +541,8 @@ app.post('/api/login', async (req, res) => {
 
 app.post('/api/spreadsheet-setup', async (req, res) => {
   try {
-    const { email, spreadsheetUrl, spreadsheetName } = req.body;
-    const newSpreadsheetId = extractSpreadsheetId(spreadsheetUrl);
+    const { email, spreadsheetUrl, spreadsheetName, spreadsheetId } = req.body;
+    const newSpreadsheetId = spreadsheetId || extractSpreadsheetId(spreadsheetUrl);
 
     if (!newSpreadsheetId) {
       return res.status(400).json({ error: 'Invalid Google Spreadsheet URL' });
@@ -553,13 +554,26 @@ app.post('/api/spreadsheet-setup', async (req, res) => {
       return res.status(400).json({ error: 'No spreadsheet ID found. Please login again.' });
     }
 
-    // Share the new spreadsheet with the service account
-    await shareSpreadsheet(newSpreadsheetId);
+    // Check if spreadsheet already exists for this user
+    const existingSpreadsheets = await sheets.spreadsheets.values.get({
+      spreadsheetId: userSpreadsheetId,
+      range: 'Spreadsheet IDs',
+    });
 
-    // Get next available ID for the spreadsheet entry
+    if (existingSpreadsheets.data.values) {
+      const isDuplicate = existingSpreadsheets.data.values.some(
+        row => row[2] === newSpreadsheetId && row[1] === email
+      );
+      
+      if (isDuplicate) {
+        return res.status(400).json({ error: 'This spreadsheet is already added to your account' });
+      }
+    }
+
+    // Rest of your existing code...
+    await shareSpreadsheet(newSpreadsheetId);
     const nextId = await getNextSpreadsheetId(userSpreadsheetId);
 
-    // Add the spreadsheet ID and name to the "Spreadsheet IDs" sheet
     await sheets.spreadsheets.values.append({
       spreadsheetId: userSpreadsheetId,
       range: 'Spreadsheet IDs',
@@ -569,7 +583,6 @@ app.post('/api/spreadsheet-setup', async (req, res) => {
       },
     });
 
-    // Set the new spreadsheet as the active spreadsheet
     activeSpreadsheets.set(email, newSpreadsheetId);
 
     res.json({
