@@ -13,6 +13,8 @@ import MessageCenter from './pages/MessageCenter';
 import ProtectedRoute from './components/ProtectedRoute';
 import { AuthProvider } from './context/AuthContext';
 import { LoaderProvider } from './context/LoaderContext';
+import Home from './pages/Home';
+import PrivacyPolicy from './pages/PrivacyPolicy';
 
 function App() {
   return (
@@ -27,6 +29,9 @@ function App() {
             <Route path="/login/admin" element={<AdminLogin />} />
             <Route path="/login" element={<UserLogin />} />
             <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/home" element={<Home />} />
+            <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+
             
             {/* Protected Routes */}
             <Route
@@ -63,7 +68,7 @@ function App() {
             />
             
             {/* Default Route - Redirect to User Login */}
-            <Route path="/" element={<Navigate to="/login" />} />
+            <Route path="/" element={<Navigate to="/home" />} />
           </Routes>
         </LoaderProvider>
       </AuthProvider>
