@@ -343,17 +343,17 @@ function MessageCenter() {
     setImportMapping({});
     setIsMappingComplete(false);
   };
-  
+
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-  
+
     setFile(file);
-  
+
     try {
       let data = [];
       let headers = [];
-  
+
       if (file.name.endsWith('.csv')) {
         const text = await file.text();
         const rows = text.split('\n').filter(row => row.trim() !== '');
@@ -374,11 +374,11 @@ function MessageCenter() {
         const firstSheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[firstSheetName];
         const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-        
+
         if (jsonData.length === 0) {
           throw new Error('Excel sheet is empty');
         }
-        
+
         headers = jsonData[0];
         data = jsonData.slice(1).map(row => {
           return headers.reduce((obj, header, i) => {
@@ -389,11 +389,11 @@ function MessageCenter() {
       } else {
         throw new Error('Unsupported file format');
       }
-  
+
       if (data.length === 0) {
         throw new Error('No data found in file');
       }
-  
+
       setImportData(data);
       setImportHeaders(headers);
       setImportMapping({});
@@ -404,23 +404,23 @@ function MessageCenter() {
       resetImportState();
     }
   };
-  
+
   const handleMappingChange = (spreadsheetHeader, importHeader) => {
     const newMapping = { ...importMapping, [spreadsheetHeader]: importHeader };
     setImportMapping(newMapping);
-  
+
     // Check if all required headers are mapped (excluding Unique ID)
     const requiredHeaders = headers.filter(h => h !== 'Unique ID');
     const mappedHeaders = Object.keys(newMapping).filter(k => newMapping[k]);
-    
+
     // Check if all required headers are mapped and have non-empty values
-    const isComplete = requiredHeaders.every(h => 
+    const isComplete = requiredHeaders.every(h =>
       mappedHeaders.includes(h) && newMapping[h]
     );
-    
+
     setIsMappingComplete(isComplete);
   };
-  
+
   const handleImportSubmit = async () => {
     try {
       const spreadsheetId = localStorage.getItem('selectedSpreadsheetId');
@@ -428,7 +428,7 @@ function MessageCenter() {
         toast.error('No spreadsheet selected');
         return;
       }
-  
+
       // Transform data according to mapping
       const transformedData = importData.map(row => {
         const newRow = {};
@@ -437,13 +437,13 @@ function MessageCenter() {
         });
         return newRow;
       });
-  
+
       // Get next available ID
       const response = await api.get('/api/get-next-id', {
         params: { spreadsheetId }
       });
       const nextId = response.data.nextId;
-  
+
       // Prepare data for API with auto-incremented IDs
       const dataWithIds = transformedData.map((row, index) => {
         return {
@@ -451,13 +451,13 @@ function MessageCenter() {
           'Unique ID': (nextId + index).toString() // Auto-generate sequential IDs
         };
       });
-  
+
       // Send to backend
       const importResponse = await api.post('/api/import-data', {
         spreadsheetId,
         data: dataWithIds
       });
-  
+
       if (importResponse.data.success) {
         toast.success(`Successfully imported ${dataWithIds.length} records`);
         setShowImportModal(false);
@@ -506,7 +506,16 @@ function MessageCenter() {
         <div className="mb-6 flex flex-wrap gap-4">
 
           <button
-            className="flex items-center px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700"
+            onClick={() => {
+              if (selectedRows.length === 0) {
+                toast.error('Please select at least one user to send message');
+                return;
+              }
+              // Store selected users in localStorage temporarily
+              localStorage.setItem('selectedUsersForMessage', JSON.stringify(selectedRows));
+              navigate('/send-message');
+            }}
+            className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
           >
             <Combine className="w-5 h-5 mr-2" />
             Send Message
@@ -1247,176 +1256,176 @@ function MessageCenter() {
           </div>
         )}
 
-{showImportModal && (
-  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-    <div className="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[90vh] flex flex-col">
-      <div className="flex justify-between items-center mb-4">
-        <h3 className="text-lg font-semibold">Import Data</h3>
-        <button
-          onClick={() => {
-            setShowImportModal(false);
-            resetImportState();
-          }}
-          className="text-gray-400 hover:text-gray-500"
-        >
-          <X className="w-5 h-5" />
-        </button>
-      </div>
+        {showImportModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[90vh] flex flex-col">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-semibold">Import Data</h3>
+                <button
+                  onClick={() => {
+                    setShowImportModal(false);
+                    resetImportState();
+                  }}
+                  className="text-gray-400 hover:text-gray-500"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
 
-      <div className="flex-1 overflow-y-auto space-y-6 pb-4">
-        {/* Step 1: File Upload */}
-        <div className="bg-gray-50 p-4 rounded-lg">
-          <h4 className="font-medium mb-3 text-gray-800">Step 1: Upload File</h4>
-          <div className="flex items-center gap-4">
-            <label className="block flex-1">
-              <span className="sr-only">Choose CSV or Excel file</span>
-              <input
-                type="file"
-                accept=".csv,.xlsx,.xls"
-                onChange={handleFileUpload}
-                className="block w-full text-sm text-gray-500
+              <div className="flex-1 overflow-y-auto space-y-6 pb-4">
+                {/* Step 1: File Upload */}
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <h4 className="font-medium mb-3 text-gray-800">Step 1: Upload File</h4>
+                  <div className="flex items-center gap-4">
+                    <label className="block flex-1">
+                      <span className="sr-only">Choose CSV or Excel file</span>
+                      <input
+                        type="file"
+                        accept=".csv,.xlsx,.xls"
+                        onChange={handleFileUpload}
+                        className="block w-full text-sm text-gray-500
                   file:mr-4 file:py-2 file:px-4
                   file:rounded-md file:border-0
                   file:text-sm file:font-semibold
                   file:bg-indigo-50 file:text-indigo-700
                   hover:file:bg-indigo-100"
-              />
-            </label>
-            {file && (
-              <div className="flex items-center text-sm text-gray-600">
-                <Check className="w-4 h-4 text-green-500 mr-1" />
-                {file.name}
-              </div>
-            )}
-          </div>
-          <p className="mt-2 text-xs text-gray-500">
-            Supported formats: .csv, .xlsx, .xls
-          </p>
-        </div>
+                      />
+                    </label>
+                    {file && (
+                      <div className="flex items-center text-sm text-gray-600">
+                        <Check className="w-4 h-4 text-green-500 mr-1" />
+                        {file.name}
+                      </div>
+                    )}
+                  </div>
+                  <p className="mt-2 text-xs text-gray-500">
+                    Supported formats: .csv, .xlsx, .xls
+                  </p>
+                </div>
 
-        {/* Step 2: Column Mapping */}
-        {importData.length > 0 && (
-          <div className="bg-gray-50 p-4 rounded-lg">
-            <h4 className="font-medium mb-3 text-gray-800">Step 2: Map Columns</h4>
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-100">
-                  <tr>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Spreadsheet Column
-                    </th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Map To
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {headers.map((header, index) => (
-                    <tr key={index} className={header === 'Unique ID' ? 'bg-gray-50' : ''}>
-                      <td className="px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-900">
-                        {header}
-                        {header === 'Unique ID' && (
-                          <span className="ml-1 text-xs text-gray-500">(auto-generated)</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-2 whitespace-nowrap">
-                        {header === 'Unique ID' ? (
-                          <span className="text-sm text-gray-500">Auto-generated</span>
-                        ) : (
-                          <select
-                            value={importMapping[header] || ''}
-                            onChange={(e) => handleMappingChange(header, e.target.value)}
-                            className="block w-full rounded-md border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                          >
-                            <option value="">-- Select column --</option>
-                            {importHeaders.map((importHeader, i) => (
-                              <option key={i} value={importHeader}>
-                                {importHeader}
-                              </option>
+                {/* Step 2: Column Mapping */}
+                {importData.length > 0 && (
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <h4 className="font-medium mb-3 text-gray-800">Step 2: Map Columns</h4>
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-100">
+                          <tr>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Spreadsheet Column
+                            </th>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Map To
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                          {headers.map((header, index) => (
+                            <tr key={index} className={header === 'Unique ID' ? 'bg-gray-50' : ''}>
+                              <td className="px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-900">
+                                {header}
+                                {header === 'Unique ID' && (
+                                  <span className="ml-1 text-xs text-gray-500">(auto-generated)</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-2 whitespace-nowrap">
+                                {header === 'Unique ID' ? (
+                                  <span className="text-sm text-gray-500">Auto-generated</span>
+                                ) : (
+                                  <select
+                                    value={importMapping[header] || ''}
+                                    onChange={(e) => handleMappingChange(header, e.target.value)}
+                                    className="block w-full rounded-md border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                                  >
+                                    <option value="">-- Select column --</option>
+                                    {importHeaders.map((importHeader, i) => (
+                                      <option key={i} value={importHeader}>
+                                        {importHeader}
+                                      </option>
+                                    ))}
+                                  </select>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {!isMappingComplete && (
+                      <div className="mt-2 text-sm text-yellow-600 flex items-center">
+                        <Info className="w-4 h-4 mr-1" />
+                        Map all required columns to proceed
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Step 3: Preview */}
+                {isMappingComplete && (
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <h4 className="font-medium mb-3 text-gray-800">Step 3: Preview</h4>
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-100">
+                          <tr>
+                            {headers.map((header, index) => (
+                              <th
+                                key={index}
+                                className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                              >
+                                {header}
+                              </th>
                             ))}
-                          </select>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {!isMappingComplete && (
-              <div className="mt-2 text-sm text-yellow-600 flex items-center">
-                <Info className="w-4 h-4 mr-1" />
-                Map all required columns to proceed
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                          {importData.slice(0, 5).map((row, rowIndex) => (
+                            <tr key={rowIndex}>
+                              {headers.map((header, cellIndex) => (
+                                <td
+                                  key={cellIndex}
+                                  className="px-4 py-2 whitespace-nowrap text-sm text-gray-700 max-w-xs truncate"
+                                >
+                                  {row[header] || ''}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                          {importData.length > 5 && (
+                            <tr>
+                              <td colSpan={headers.length} className="px-4 py-2 text-center text-sm text-gray-500">
+                                ... and {importData.length - 5} more rows
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-        )}
 
-        {/* Step 3: Preview */}
-        {isMappingComplete && (
-          <div className="bg-gray-50 p-4 rounded-lg">
-            <h4 className="font-medium mb-3 text-gray-800">Step 3: Preview</h4>
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-100">
-                  <tr>
-                    {headers.map((header, index) => (
-                      <th
-                        key={index}
-                        className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                      >
-                        {header}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {importData.slice(0, 5).map((row, rowIndex) => (
-                    <tr key={rowIndex}>
-                      {headers.map((header, cellIndex) => (
-                        <td
-                          key={cellIndex}
-                          className="px-4 py-2 whitespace-nowrap text-sm text-gray-700 max-w-xs truncate"
-                        >
-                          {row[header] || ''}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                  {importData.length > 5 && (
-                    <tr>
-                      <td colSpan={headers.length} className="px-4 py-2 text-center text-sm text-gray-500">
-                        ... and {importData.length - 5} more rows
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+              <div className="flex justify-end space-x-3 pt-4 border-t">
+                <button
+                  onClick={() => {
+                    setShowImportModal(false);
+                    resetImportState();
+                  }}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-500"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleImportSubmit}
+                  disabled={!isMappingComplete || importData.length === 0}
+                  className={`px-4 py-2 text-white rounded-md ${!isMappingComplete || importData.length === 0 ? 'bg-indigo-300 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'}`}
+                >
+                  Import {importData.length} Records
+                </button>
+              </div>
             </div>
           </div>
         )}
-      </div>
-
-      <div className="flex justify-end space-x-3 pt-4 border-t">
-        <button
-          onClick={() => {
-            setShowImportModal(false);
-            resetImportState();
-          }}
-          className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-500"
-        >
-          Cancel
-        </button>
-        <button
-          onClick={handleImportSubmit}
-          disabled={!isMappingComplete || importData.length === 0}
-          className={`px-4 py-2 text-white rounded-md ${!isMappingComplete || importData.length === 0 ? 'bg-indigo-300 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'}`}
-        >
-          Import {importData.length} Records
-        </button>
-      </div>
-    </div>
-  </div>
-)}
 
         {/* Combine Groups Modal */}
         {showCombineGroupsModal && (

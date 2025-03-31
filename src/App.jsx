@@ -15,6 +15,7 @@ import { AuthProvider } from './context/AuthContext';
 import { LoaderProvider } from './context/LoaderContext';
 import Home from './pages/Home';
 import PrivacyPolicy from './pages/PrivacyPolicy';
+import SendMessage from './pages/SendMessage';
 
 function App() {
   return (
@@ -63,6 +64,14 @@ function App() {
               element={
                 <ProtectedRoute>
                   <MessageCenter />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/send-message"
+              element={
+                <ProtectedRoute>
+                  <SendMessage />
                 </ProtectedRoute>
               }
             />
