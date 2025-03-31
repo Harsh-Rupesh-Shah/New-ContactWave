@@ -12,12 +12,15 @@ import {
   Plus,
   X,
   Check,
-  Info
+  Info,
+  UserMinus,
+  FileUp
 } from 'lucide-react';
 import api from '../api/axios';
 import Navbar from '../components/Navbar';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
+import * as XLSX from 'xlsx';
 
 function MessageCenter() {
   const navigate = useNavigate();
@@ -46,6 +49,14 @@ function MessageCenter() {
   const [editingRow, setEditingRow] = useState(null);
   const [editingRowIndex, setEditingRowIndex] = useState(null);
   const [showAddToGroupsModal, setShowAddToGroupsModal] = useState(false);
+  const [showRemoveFromGroupsModal, setShowRemoveFromGroupsModal] = useState(false);
+  const [groupsToRemoveFrom, setGroupsToRemoveFrom] = useState([]);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importData, setImportData] = useState([]);
+  const [file, setFile] = useState(null);
+  const [importHeaders, setImportHeaders] = useState([]);
+  const [importMapping, setImportMapping] = useState({});
+  const [isMappingComplete, setIsMappingComplete] = useState(false);
 
   useEffect(() => {
     const storedSpreadsheetId = localStorage.getItem('selectedSpreadsheetId');
@@ -159,6 +170,8 @@ function MessageCenter() {
       toast.error(error.response?.data?.message || 'Failed to create group');
     }
   };
+
+
 
   const handleCombineGroups = async () => {
     try {
@@ -301,6 +314,7 @@ function MessageCenter() {
   };
   ;
 
+  // Original function for Show Groups modal
   const handleGroupCheckboxChange = (groupId) => {
     setSelectedGroups(prevSelectedGroups => {
       if (prevSelectedGroups.includes(groupId)) {
@@ -309,6 +323,151 @@ function MessageCenter() {
         return [...prevSelectedGroups, groupId];
       }
     });
+  };
+
+  // New function for Remove from Groups modal
+  const handleRemoveGroupCheckboxChange = (groupId) => {
+    setGroupsToRemoveFrom(prevGroups => {
+      if (prevGroups.includes(groupId)) {
+        return prevGroups.filter(id => id !== groupId);
+      } else {
+        return [...prevGroups, groupId];
+      }
+    });
+  };
+
+  const resetImportState = () => {
+    setImportData([]);
+    setFile(null);
+    setImportHeaders([]);
+    setImportMapping({});
+    setIsMappingComplete(false);
+  };
+  
+  const handleFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+  
+    setFile(file);
+  
+    try {
+      let data = [];
+      let headers = [];
+  
+      if (file.name.endsWith('.csv')) {
+        const text = await file.text();
+        const rows = text.split('\n').filter(row => row.trim() !== '');
+        if (rows.length === 0) {
+          throw new Error('CSV file is empty');
+        }
+        headers = rows[0].split(',').map(h => h.trim());
+        data = rows.slice(1).map(row => {
+          const values = row.split(',');
+          return headers.reduce((obj, header, i) => {
+            obj[header] = values[i]?.trim() || '';
+            return obj;
+          }, {});
+        });
+      } else if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+        const arrayBuffer = await file.arrayBuffer();
+        const workbook = XLSX.read(arrayBuffer);
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+        
+        if (jsonData.length === 0) {
+          throw new Error('Excel sheet is empty');
+        }
+        
+        headers = jsonData[0];
+        data = jsonData.slice(1).map(row => {
+          return headers.reduce((obj, header, i) => {
+            obj[header] = (row[i] !== undefined && row[i] !== null) ? String(row[i]).trim() : '';
+            return obj;
+          }, {});
+        });
+      } else {
+        throw new Error('Unsupported file format');
+      }
+  
+      if (data.length === 0) {
+        throw new Error('No data found in file');
+      }
+  
+      setImportData(data);
+      setImportHeaders(headers);
+      setImportMapping({});
+      setIsMappingComplete(false);
+    } catch (error) {
+      console.error('Error parsing file:', error);
+      toast.error(`Error: ${error.message}`);
+      resetImportState();
+    }
+  };
+  
+  const handleMappingChange = (spreadsheetHeader, importHeader) => {
+    const newMapping = { ...importMapping, [spreadsheetHeader]: importHeader };
+    setImportMapping(newMapping);
+  
+    // Check if all required headers are mapped (excluding Unique ID)
+    const requiredHeaders = headers.filter(h => h !== 'Unique ID');
+    const mappedHeaders = Object.keys(newMapping).filter(k => newMapping[k]);
+    
+    // Check if all required headers are mapped and have non-empty values
+    const isComplete = requiredHeaders.every(h => 
+      mappedHeaders.includes(h) && newMapping[h]
+    );
+    
+    setIsMappingComplete(isComplete);
+  };
+  
+  const handleImportSubmit = async () => {
+    try {
+      const spreadsheetId = localStorage.getItem('selectedSpreadsheetId');
+      if (!spreadsheetId) {
+        toast.error('No spreadsheet selected');
+        return;
+      }
+  
+      // Transform data according to mapping
+      const transformedData = importData.map(row => {
+        const newRow = {};
+        Object.entries(importMapping).forEach(([spreadsheetHeader, importHeader]) => {
+          newRow[spreadsheetHeader] = row[importHeader];
+        });
+        return newRow;
+      });
+  
+      // Get next available ID
+      const response = await api.get('/api/get-next-id', {
+        params: { spreadsheetId }
+      });
+      const nextId = response.data.nextId;
+  
+      // Prepare data for API with auto-incremented IDs
+      const dataWithIds = transformedData.map((row, index) => {
+        return {
+          ...row,
+          'Unique ID': (nextId + index).toString() // Auto-generate sequential IDs
+        };
+      });
+  
+      // Send to backend
+      const importResponse = await api.post('/api/import-data', {
+        spreadsheetId,
+        data: dataWithIds
+      });
+  
+      if (importResponse.data.success) {
+        toast.success(`Successfully imported ${dataWithIds.length} records`);
+        setShowImportModal(false);
+        resetImportState();
+        fetchSpreadsheetData(spreadsheetId); // Refresh the data
+      }
+    } catch (error) {
+      console.error('Error importing data:', error);
+      toast.error('Failed to import data');
+    }
   };
 
   const filteredData = () => {
@@ -388,6 +547,15 @@ function MessageCenter() {
           </button>
 
           <button
+            onClick={() => setShowRemoveFromGroupsModal(true)}
+            disabled={!selectedRows.length}
+            className="flex items-center px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <UserMinus className="w-5 h-5 mr-2" />
+            Remove from Groups
+          </button>
+
+          <button
             onClick={() => {
               if (selectedGroups.length === 0) {
                 setShowGroupsModal(true);
@@ -417,6 +585,14 @@ function MessageCenter() {
           >
             <FileSpreadsheet className="w-5 h-5 mr-2" />
             Change Spreadsheet
+          </button>
+
+          <button
+            onClick={() => setShowImportModal(true)}
+            className="flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+          >
+            <FileUp className="w-5 h-5 mr-2" />
+            Import Data
           </button>
 
           <button
@@ -741,97 +917,97 @@ function MessageCenter() {
           </div>
         )}
 
-{showAddToGroupsModal && (
-  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-    <div className="bg-white rounded-lg p-6 max-w-md w-full">
-      <div className="flex justify-between items-center mb-4">
-        <h3 className="text-lg font-semibold">Add Users to Groups</h3>
-        <button
-          onClick={() => {
-            setShowAddToGroupsModal(false);
-            setSelectedGroups([]);
-          }}
-          className="text-gray-400 hover:text-gray-500"
-        >
-          <X className="w-5 h-5" />
-        </button>
-      </div>
-      <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Select Groups to Add Users To
-          </label>
-          <div className="max-h-60 overflow-y-auto border rounded-md p-2">
-            {groups.map((group) => (
-              <div key={group.groupId} className="flex items-center mb-2">
-                <input
-                  type="checkbox"
-                  id={`add-group-${group.groupId}`}
-                  checked={selectedGroups.includes(group.groupId)}
-                  onChange={() => handleGroupCheckboxChange(group.groupId)}
-                  className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-                />
-                <label htmlFor={`add-group-${group.groupId}`} className="ml-2 text-sm text-gray-700">
-                  {group.groupName}
-                  <span className="ml-2 text-xs text-gray-500">
-                    ({group.memberCount} members)
-                  </span>
-                </label>
+        {showAddToGroupsModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-lg p-6 max-w-md w-full">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-semibold">Add Users to Groups</h3>
+                <button
+                  onClick={() => {
+                    setShowAddToGroupsModal(false);
+                    setSelectedGroups([]);
+                  }}
+                  className="text-gray-400 hover:text-gray-500"
+                >
+                  <X className="w-5 h-5" />
+                </button>
               </div>
-            ))}
-          </div>
-        </div>
-        <div className="mt-2">
-          <p className="text-sm text-gray-600">
-            Selected users: {selectedRows.length}
-          </p>
-          <p className="text-sm text-gray-600">
-            Selected groups: {selectedGroups.length}
-          </p>
-        </div>
-        <div className="flex justify-end space-x-3">
-          <button
-            onClick={() => {
-              setShowAddToGroupsModal(false);
-              setSelectedGroups([]);
-            }}
-            className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-500"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={async () => {
-              try {
-                const spreadsheetId = localStorage.getItem('selectedSpreadsheetId');
-                const userIds = selectedRows.map(row => row[0]);
-                
-                const response = await api.post('/api/add-users-to-groups', {
-                  userIds,
-                  groupIds: selectedGroups,
-                  spreadsheetId
-                });
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Select Groups to Add Users To
+                  </label>
+                  <div className="max-h-60 overflow-y-auto border rounded-md p-2">
+                    {groups.map((group) => (
+                      <div key={group.groupId} className="flex items-center mb-2">
+                        <input
+                          type="checkbox"
+                          id={`add-group-${group.groupId}`}
+                          checked={selectedGroups.includes(group.groupId)}
+                          onChange={() => handleGroupCheckboxChange(group.groupId)}
+                          className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                        />
+                        <label htmlFor={`add-group-${group.groupId}`} className="ml-2 text-sm text-gray-700">
+                          {group.groupName}
+                          <span className="ml-2 text-xs text-gray-500">
+                            ({group.memberCount} members)
+                          </span>
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="mt-2">
+                  <p className="text-sm text-gray-600">
+                    Selected users: {selectedRows.length}
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    Selected groups: {selectedGroups.length}
+                  </p>
+                </div>
+                <div className="flex justify-end space-x-3">
+                  <button
+                    onClick={() => {
+                      setShowAddToGroupsModal(false);
+                      setSelectedGroups([]);
+                    }}
+                    className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-500"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={async () => {
+                      try {
+                        const spreadsheetId = localStorage.getItem('selectedSpreadsheetId');
+                        const userIds = selectedRows.map(row => row[0]);
 
-                if (response.data.success) {
-                  toast.success(`Added ${selectedRows.length} user(s) to ${selectedGroups.length} group(s)`);
-                  setShowAddToGroupsModal(false);
-                  setSelectedGroups([]);
-                  fetchGroups(spreadsheetId); // Refresh groups
-                }
-              } catch (error) {
-                console.error('Error adding users to groups:', error);
-                toast.error('Failed to add users to groups');
-              }
-            }}
-            disabled={selectedGroups.length === 0}
-            className="px-4 py-2 bg-teal-600 text-white rounded-md hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Add Users
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
-)}
+                        const response = await api.post('/api/add-users-to-groups', {
+                          userIds,
+                          groupIds: selectedGroups,
+                          spreadsheetId
+                        });
+
+                        if (response.data.success) {
+                          toast.success(`Added ${selectedRows.length} user(s) to ${selectedGroups.length} group(s)`);
+                          setShowAddToGroupsModal(false);
+                          setSelectedGroups([]);
+                          fetchGroups(spreadsheetId); // Refresh groups
+                        }
+                      } catch (error) {
+                        console.error('Error adding users to groups:', error);
+                        toast.error('Failed to add users to groups');
+                      }
+                    }}
+                    disabled={selectedGroups.length === 0}
+                    className="px-4 py-2 bg-teal-600 text-white rounded-md hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Add Users
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Delete Groups Confirmation Modal */}
         {showDeleteGroupsModal && (
@@ -879,6 +1055,98 @@ function MessageCenter() {
                     className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
                   >
                     Delete Groups
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showRemoveFromGroupsModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-lg p-6 max-w-md w-full">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-semibold">Remove Users from Groups</h3>
+                <button
+                  onClick={() => {
+                    setShowRemoveFromGroupsModal(false);
+                    setGroupsToRemoveFrom([]);
+                  }}
+                  className="text-gray-400 hover:text-gray-500"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Select Groups to Remove Users From
+                  </label>
+                  <div className="max-h-60 overflow-y-auto border rounded-md p-2">
+                    {groups.map((group) => (
+                      <div key={group.groupId} className="flex items-center mb-2">
+                        <input
+                          type="checkbox"
+                          id={`remove-group-${group.groupId}`}
+                          checked={groupsToRemoveFrom.includes(group.groupId)}
+                          onChange={() => handleRemoveGroupCheckboxChange(group.groupId)}
+                          className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                        />
+                        <label htmlFor={`remove-group-${group.groupId}`} className="ml-2 text-sm text-gray-700">
+                          {group.groupName}
+                          <span className="ml-2 text-xs text-gray-500">
+                            ({group.memberCount} members)
+                          </span>
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="mt-2">
+                  <p className="text-sm text-gray-600">
+                    Selected users: {selectedRows.length}
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    Selected groups: {groupsToRemoveFrom.length}
+                  </p>
+                </div>
+                <div className="flex justify-end space-x-3">
+                  <button
+                    onClick={() => {
+                      setShowRemoveFromGroupsModal(false);
+                      setGroupsToRemoveFrom([]);
+                    }}
+                    className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-500"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={async () => {
+                      try {
+                        const spreadsheetId = localStorage.getItem('selectedSpreadsheetId');
+                        const userIds = selectedRows.map(row => row[0]);
+
+                        const response = await api.post('/api/remove-users-from-groups', {
+                          userIds,
+                          groupIds: groupsToRemoveFrom,
+                          spreadsheetId
+                        });
+
+                        if (response.data.success) {
+                          toast.success(`Removed ${selectedRows.length} user(s) from ${groupsToRemoveFrom.length} group(s)`);
+                          setShowRemoveFromGroupsModal(false);
+                          setGroupsToRemoveFrom([]);
+                          fetchGroups(spreadsheetId); // Refresh groups
+                        }
+                      } catch (error) {
+                        console.error('Error removing users from groups:', error);
+                        toast.error('Failed to remove users from groups');
+                      }
+                    }}
+                    disabled={groupsToRemoveFrom.length === 0}
+                    className="px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Remove Users
                   </button>
                 </div>
               </div>
@@ -978,6 +1246,177 @@ function MessageCenter() {
             </div>
           </div>
         )}
+
+{showImportModal && (
+  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+    <div className="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[90vh] flex flex-col">
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="text-lg font-semibold">Import Data</h3>
+        <button
+          onClick={() => {
+            setShowImportModal(false);
+            resetImportState();
+          }}
+          className="text-gray-400 hover:text-gray-500"
+        >
+          <X className="w-5 h-5" />
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto space-y-6 pb-4">
+        {/* Step 1: File Upload */}
+        <div className="bg-gray-50 p-4 rounded-lg">
+          <h4 className="font-medium mb-3 text-gray-800">Step 1: Upload File</h4>
+          <div className="flex items-center gap-4">
+            <label className="block flex-1">
+              <span className="sr-only">Choose CSV or Excel file</span>
+              <input
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                onChange={handleFileUpload}
+                className="block w-full text-sm text-gray-500
+                  file:mr-4 file:py-2 file:px-4
+                  file:rounded-md file:border-0
+                  file:text-sm file:font-semibold
+                  file:bg-indigo-50 file:text-indigo-700
+                  hover:file:bg-indigo-100"
+              />
+            </label>
+            {file && (
+              <div className="flex items-center text-sm text-gray-600">
+                <Check className="w-4 h-4 text-green-500 mr-1" />
+                {file.name}
+              </div>
+            )}
+          </div>
+          <p className="mt-2 text-xs text-gray-500">
+            Supported formats: .csv, .xlsx, .xls
+          </p>
+        </div>
+
+        {/* Step 2: Column Mapping */}
+        {importData.length > 0 && (
+          <div className="bg-gray-50 p-4 rounded-lg">
+            <h4 className="font-medium mb-3 text-gray-800">Step 2: Map Columns</h4>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-100">
+                  <tr>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Spreadsheet Column
+                    </th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Map To
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {headers.map((header, index) => (
+                    <tr key={index} className={header === 'Unique ID' ? 'bg-gray-50' : ''}>
+                      <td className="px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-900">
+                        {header}
+                        {header === 'Unique ID' && (
+                          <span className="ml-1 text-xs text-gray-500">(auto-generated)</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2 whitespace-nowrap">
+                        {header === 'Unique ID' ? (
+                          <span className="text-sm text-gray-500">Auto-generated</span>
+                        ) : (
+                          <select
+                            value={importMapping[header] || ''}
+                            onChange={(e) => handleMappingChange(header, e.target.value)}
+                            className="block w-full rounded-md border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                          >
+                            <option value="">-- Select column --</option>
+                            {importHeaders.map((importHeader, i) => (
+                              <option key={i} value={importHeader}>
+                                {importHeader}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {!isMappingComplete && (
+              <div className="mt-2 text-sm text-yellow-600 flex items-center">
+                <Info className="w-4 h-4 mr-1" />
+                Map all required columns to proceed
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Step 3: Preview */}
+        {isMappingComplete && (
+          <div className="bg-gray-50 p-4 rounded-lg">
+            <h4 className="font-medium mb-3 text-gray-800">Step 3: Preview</h4>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-100">
+                  <tr>
+                    {headers.map((header, index) => (
+                      <th
+                        key={index}
+                        className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                      >
+                        {header}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {importData.slice(0, 5).map((row, rowIndex) => (
+                    <tr key={rowIndex}>
+                      {headers.map((header, cellIndex) => (
+                        <td
+                          key={cellIndex}
+                          className="px-4 py-2 whitespace-nowrap text-sm text-gray-700 max-w-xs truncate"
+                        >
+                          {row[header] || ''}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                  {importData.length > 5 && (
+                    <tr>
+                      <td colSpan={headers.length} className="px-4 py-2 text-center text-sm text-gray-500">
+                        ... and {importData.length - 5} more rows
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="flex justify-end space-x-3 pt-4 border-t">
+        <button
+          onClick={() => {
+            setShowImportModal(false);
+            resetImportState();
+          }}
+          className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-500"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={handleImportSubmit}
+          disabled={!isMappingComplete || importData.length === 0}
+          className={`px-4 py-2 text-white rounded-md ${!isMappingComplete || importData.length === 0 ? 'bg-indigo-300 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'}`}
+        >
+          Import {importData.length} Records
+        </button>
+      </div>
+    </div>
+  </div>
+)}
 
         {/* Combine Groups Modal */}
         {showCombineGroupsModal && (

@@ -27,7 +27,7 @@ router.get('/get-active-spreadsheet', verifyToken, async (req, res) => {
 router.post('/set-active-spreadsheet', verifyToken, async (req, res) => {
   try {
     const { spreadsheetId } = req.body;
-    
+
     if (!spreadsheetId) {
       return res.status(400).json({ success: false, message: 'Spreadsheet ID is required' });
     }
@@ -181,7 +181,7 @@ async function ensureGroupsSheetExists(sheets, spreadsheetId) {
 router.get('/fetch-registrations', verifyToken, async (req, res) => {
   try {
     const { spreadsheetId } = req.query;
-    
+
     if (!spreadsheetId) {
       return res.status(400).json({ success: false, message: 'Spreadsheet ID is required' });
     }
@@ -195,8 +195,8 @@ router.get('/fetch-registrations', verifyToken, async (req, res) => {
     });
 
     const headerRow = response.data.values?.[0] || [];
-    const hasUniqueIdColumn = headerRow.length > 0 && 
-                            headerRow[0].trim().toLowerCase() === 'unique id';
+    const hasUniqueIdColumn = headerRow.length > 0 &&
+      headerRow[0].trim().toLowerCase() === 'unique id';
 
     if (!hasUniqueIdColumn) {
       // If no Unique ID column, initialize the spreadsheet
@@ -210,7 +210,7 @@ router.get('/fetch-registrations', verifyToken, async (req, res) => {
     });
 
     const rows = fullResponse.data.values || [];
-    
+
     if (rows.length === 0) {
       return res.status(404).json({ success: false, message: 'No data found in spreadsheet' });
     }
@@ -232,11 +232,11 @@ async function initializeSpreadsheetWithUniqueId(sheets, spreadsheetId, existing
     });
 
     const values = response.data.values || [];
-    
+
     // Check if we need to insert a new column or just rename existing first column
     const firstColHeader = values[0]?.[0] || '';
     const isFirstColumnEmpty = !firstColHeader.trim();
-    
+
     if (isFirstColumnEmpty) {
       // If first column is empty, just rename it
       values[0][0] = 'Unique ID';
@@ -268,7 +268,7 @@ async function initializeSpreadsheetWithUniqueId(sheets, spreadsheetId, existing
         }
         return ['Unique ID', ...row]; // Add header
       }
-      
+
       // For data rows
       if (isFirstColumnEmpty) {
         row[0] = index.toString(); // Fill empty first column with ID
@@ -354,8 +354,8 @@ router.post('/create-group', verifyToken, async (req, res) => {
       },
     });
 
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       groupId,
       message: 'Group created successfully',
       groupDetails: {
@@ -457,7 +457,7 @@ router.post('/combine-groups', verifyToken, async (req, res) => {
 
     const rows = response.data.values || [];
     const groups = rows.filter(row => groupIds.includes(row[0]));
-    
+
     // Combine member IDs
     const combinedMemberIds = new Set();
     groups.forEach(group => {
@@ -483,8 +483,8 @@ router.post('/combine-groups', verifyToken, async (req, res) => {
       },
     });
 
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       groupId: newGroupId,
       message: 'Groups combined successfully',
       groupDetails: {
@@ -666,7 +666,7 @@ router.get('/export-csv', verifyToken, async (req, res) => {
     });
 
     const rows = response.data.values || [];
-    
+
     // Convert to CSV
     const parser = new Parser();
     const csv = parser.parse(rows.slice(1).map(row => {
@@ -752,8 +752,8 @@ router.put('/update-row', verifyToken, async (req, res) => {
       }
     });
 
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       message: 'Row updated successfully',
       updatedData: rowData
     });
@@ -776,7 +776,7 @@ router.put('/update-row', verifyToken, async (req, res) => {
 
 //     // Generate unique ID
 //     const uniqueId = uuidv4();
-    
+
 //     // Prepare user data array with unique ID
 //     const userDataArray = [uniqueId, ...Object.values(userData)];
 
@@ -919,7 +919,7 @@ router.delete('/delete-groups', verifyToken, async (req, res) => {
     });
 
     const rows = response.data.values || [];
-    
+
     // Filter out the groups to be deleted
     const updatedRows = rows.filter(row => !groupIds.includes(row[0]));
 
@@ -971,8 +971,8 @@ router.put('/update-row', verifyToken, async (req, res) => {
       }
     });
 
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       message: 'Row updated successfully',
       updatedData: rowData
     });
@@ -1038,6 +1038,149 @@ router.post('/add-users-to-groups', verifyToken, async (req, res) => {
   } catch (error) {
     console.error('Error adding users to groups:', error);
     res.status(500).json({ success: false, message: 'Failed to add users to groups' });
+  }
+});
+
+// Remove Users from Groups
+router.post('/remove-users-from-groups', verifyToken, async (req, res) => {
+  try {
+    const { userIds, groupIds, spreadsheetId } = req.body;
+
+    if (!spreadsheetId) {
+      return res.status(400).json({ success: false, message: 'Spreadsheet ID is required' });
+    }
+
+    if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
+      return res.status(400).json({ success: false, message: 'User IDs are required' });
+    }
+
+    if (!groupIds || !Array.isArray(groupIds) || groupIds.length === 0) {
+      return res.status(400).json({ success: false, message: 'Group IDs are required' });
+    }
+
+    const sheets = google.sheets({ version: 'v4', auth: await auth.getClient() });
+
+    // Get all groups
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: 'Groups!A2:D',
+    });
+
+    const rows = response.data.values || [];
+    let updatedCount = 0;
+
+    // Update each selected group
+    const updatedRows = rows.map(row => {
+      if (groupIds.includes(row[0])) {
+        const memberIds = JSON.parse(row[3] || '[]');
+        // Filter out the users we want to remove
+        const newMemberIds = memberIds.filter(id => !userIds.includes(id));
+        updatedCount++;
+        return [row[0], row[1], row[2], JSON.stringify(newMemberIds)];
+      }
+      return row;
+    });
+
+    // Update the groups sheet
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: 'Groups!A2:D',
+      valueInputOption: 'RAW',
+      resource: { values: updatedRows },
+    });
+
+    res.json({
+      success: true,
+      message: `Users removed from ${updatedCount} group(s)`,
+      updatedGroupCount: updatedCount,
+      removedUserCount: userIds.length
+    });
+  } catch (error) {
+    console.error('Error removing users from groups:', error);
+    res.status(500).json({ success: false, message: 'Failed to remove users from groups' });
+  }
+});
+
+// Get next available ID
+router.get('/get-next-id', verifyToken, async (req, res) => {
+  try {
+    const { spreadsheetId } = req.query;
+    
+    if (!spreadsheetId) {
+      return res.status(400).json({ success: false, message: 'Spreadsheet ID is required' });
+    }
+
+    const sheets = google.sheets({ version: 'v4', auth: await auth.getClient() });
+
+    // Get all values from the ID column (column A)
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: 'Sheet1!A2:A', // Skip header row
+    });
+
+    const values = response.data.values || [];
+    const ids = values.map(row => parseInt(row[0])).filter(id => !isNaN(id));
+
+    const nextId = ids.length > 0 ? Math.max(...ids) + 1 : 1;
+
+    res.json({ 
+      success: true,
+      nextId
+    });
+  } catch (error) {
+    console.error('Error getting next ID:', error);
+    res.status(500).json({ success: false, message: 'Failed to get next ID' });
+  }
+});
+
+// Import Data
+router.post('/import-data', verifyToken, async (req, res) => {
+  try {
+    const { spreadsheetId, data } = req.body;
+
+    if (!spreadsheetId) {
+      return res.status(400).json({ success: false, message: 'Spreadsheet ID is required' });
+    }
+
+    if (!data || !Array.isArray(data) || data.length === 0) {
+      return res.status(400).json({ success: false, message: 'Data is required' });
+    }
+
+    const sheets = google.sheets({ version: 'v4', auth: await auth.getClient() });
+
+    // Get headers to determine column order
+    const headersResponse = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: 'Sheet1!1:1', // Get header row
+    });
+
+    const headers = headersResponse.data.values?.[0] || [];
+    if (headers.length === 0) {
+      return res.status(400).json({ success: false, message: 'No headers found in spreadsheet' });
+    }
+
+    // Prepare data in correct column order
+    const values = data.map(item => {
+      return headers.map(header => item[header] || '');
+    });
+
+    // Append data to spreadsheet
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: 'Sheet1',
+      valueInputOption: 'RAW',
+      resource: {
+        values
+      }
+    });
+
+    res.json({ 
+      success: true,
+      importedCount: data.length
+    });
+  } catch (error) {
+    console.error('Error importing data:', error);
+    res.status(500).json({ success: false, message: 'Failed to import data' });
   }
 });
 
