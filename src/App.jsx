@@ -71,7 +71,7 @@ function App() {
               path="/send-message"
               element={
                 <ProtectedRoute>
-                  <SendMessage />
+                  <SendMessage/>
                 </ProtectedRoute>
               }
             />

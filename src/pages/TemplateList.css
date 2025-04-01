@@ -1,0 +1,95 @@
+.template-container {
+    padding: 20px;
+    font-family: Arial, sans-serif;
+  }
+  
+  .template-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 20px;
+  }
+  
+  .template-card {
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 16px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    transition: transform 0.2s ease-in-out;
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .template-card:hover {
+    transform: translateY(-5px);
+  }
+  
+  .template-content {
+    flex: 1;
+  }
+  
+  .template-section {
+    background: #f8f9fa;
+    padding: 10px;
+    border-radius: 5px;
+    margin-bottom: 8px;
+  }
+  
+  .section-title {
+    font-weight: bold;
+    color: #555;
+  }
+  
+  .section-content {
+    margin-top: 5px;
+    color: #333;
+  }
+  
+  .template-footer {
+    margin-top: auto;
+    padding-top: 10px;
+    border-top: 1px solid #ddd;
+  }
+  
+  .template-name {
+    font-size: 1.2em;
+    margin-bottom: 8px;
+  }
+  
+  .template-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  
+  .template-category {
+    font-size: 0.9em;
+    color: #666;
+  }
+  
+  .status-icon {
+    width: 20px;
+    height: 20px;
+  }
+  
+  .template-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+  }
+  
+  .edit-btn, .delete-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 5px;
+  }
+  
+  .edit-btn .icon {
+    color: #007bff;
+  }
+  
+  .delete-btn .icon {
+    color: #dc3545;
+  }

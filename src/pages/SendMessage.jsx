@@ -1,125 +1,329 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Mail, X, Check } from 'lucide-react';
+import { MessageSquare, Send, Image, Video, X, Check } from 'lucide-react';
 import api from '../api/axios';
 import Navbar from '../components/Navbar';
-import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
+import TemplateList from '../components/TemplateList';
+import ParameterModal from '../components/ParameterModal';
 
 function SendMessage() {
   const navigate = useNavigate();
-  const { user } = useAuth();
-  const [selectedUsers, setSelectedUsers] = useState([]);
-  const [message, setMessage] = useState('');
-  const [subject, setSubject] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState("");
+  const [header, setHeader] = useState("");
+  const [category, setCategory] = useState("utility");
+  const [sendMode, setSendMode] = useState("whatsapp");
+  const [results, setResults] = useState([]);
+  const [headers, setHeaders] = useState([]);
+  const [activeSpreadsheetId, setActiveSpreadsheetId] = useState(null);
+  const [files, setFiles] = useState([]);
+  const [filePreviews, setFilePreviews] = useState([]);
+  const [testMobileNumber, setTestMobileNumber] = useState("");
+  const [messageType, setMessageType] = useState("text");
+  const [selectedTemplate, setSelectedTemplate] = useState(null);
+  const [isTestMessage, setIsTestMessage] = useState(false);
+  const [selectedRows, setSelectedRows] = useState([]);
+  const [spreadsheetData, setSpreadsheetData] = useState([]);
 
   useEffect(() => {
-    // Get selected users from localStorage
-    const storedUsers = localStorage.getItem('selectedUsersForMessage');
-    if (storedUsers) {
-      setSelectedUsers(JSON.parse(storedUsers));
-    } else {
-      // If no users selected, redirect back
-      navigate('/message-center');
-    }
+    const fetchHeaders = async () => {
+      try {
+        const spreadsheetId = localStorage.getItem('selectedSpreadsheetId');
+        if (!spreadsheetId) {
+          toast.error('No spreadsheet selected');
+          navigate('/spreadsheet-setup');
+          return;
+        }
+        setActiveSpreadsheetId(spreadsheetId);
+
+        const response = await api.get('/api/fetch-registrations', {
+          params: { spreadsheetId }
+        });
+
+        if (response.data && response.data.length > 0) {
+          setHeaders(response.data[0]);
+          setSpreadsheetData(response.data.slice(1));
+        }
+      } catch (error) {
+        console.error('Error fetching headers:', error);
+        toast.error('Failed to fetch spreadsheet data');
+      }
+    };
+    fetchHeaders();
   }, [navigate]);
 
+  const handleFileChange = (e) => {
+    const selectedFiles = Array.from(e.target.files);
+    const validFiles = selectedFiles.filter((file) => {
+      if (messageType === "image") return file.type.startsWith("image/");
+      if (messageType === "video") return file.type.startsWith("video/");
+      return false;
+    });
+
+    if (validFiles.length !== selectedFiles.length) {
+      toast.error(`Some files were invalid for type: ${messageType}`);
+    }
+
+    setFiles(validFiles);
+    setFilePreviews(validFiles.map((file) => URL.createObjectURL(file)));
+  };
+
   const handleSendMessage = async () => {
-    if (!message.trim()) {
-      toast.error('Please enter a message');
+    if (!selectedTemplate) {
+      toast.error("Please select a template first");
+      return;
+    }
+
+    if (!isTestMessage && selectedRows.length === 0) {
+      toast.error("Please select recipients");
       return;
     }
 
     try {
-      setLoading(true);
-      // Here you would implement your actual message sending logic
-      // This could be an API call to your backend or integration with email service
-      const response = await api.post('/api/send-messages', {
-        users: selectedUsers,
-        message,
-        subject,
+      // Find phone number column
+      const phoneColumnVariants = ["phone number", "phone", "mobile number", "mobile"];
+      let phoneIndex = -1;
+      for (let variant of phoneColumnVariants) {
+        phoneIndex = headers.findIndex(header => 
+          header.toLowerCase().includes(variant.toLowerCase())
+        );
+        if (phoneIndex !== -1) break;
+      }
+
+      if (phoneIndex === -1) {
+        toast.error("Could not find phone number column in spreadsheet");
+        return;
+      }
+
+      // Prepare recipients
+      let formattedRecipients = isTestMessage 
+        ? [{ phone: testMobileNumber.trim(), data: {} }]
+        : selectedRows.map(row => ({
+            phone: row[phoneIndex],
+            data: Object.fromEntries(headers.map((header, index) => [header, row[index] || ""]))
+          }));
+
+      const formData = new FormData();
+      formData.append("header", header);
+      formData.append("message", message);
+      formData.append("recipients", JSON.stringify(formattedRecipients));
+      formData.append("template", JSON.stringify(selectedTemplate));
+      files.forEach((file) => formData.append("files", file));
+
+      const response = await api.post('/api/send-whatsapp', formData, {
+        headers: { "Content-Type": "multipart/form-data" }
       });
 
       if (response.data.success) {
-        toast.success(`Message sent to ${selectedUsers.length} recipients`);
-        navigate('/message-center');
+        setResults(response.data.results);
+        toast.success(response.data.message);
+        
+        // Clear form after successful send
+        setMessage("");
+        setHeader("");
+        setFiles([]);
+        setFilePreviews([]);
+        setSelectedTemplate(null);
+        setSelectedRows([]);
       }
     } catch (error) {
       console.error('Error sending messages:', error);
-      toast.error('Failed to send messages');
-    } finally {
-      setLoading(false);
+      toast.error(error.response?.data?.message || 'Failed to send messages');
     }
+  };
+
+  const removeFile = (index) => {
+    setFiles(prev => prev.filter((_, i) => i !== index));
+    setFilePreviews(prev => prev.filter((_, i) => i !== index));
   };
 
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
-
+      
       <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-2xl font-bold mb-6 flex items-center">
-            <Mail className="w-6 h-6 mr-2" />
-            Send Message
-          </h2>
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <div className="flex items-center mb-6">
+            <MessageSquare className="h-6 w-6 text-indigo-600 mr-2" />
+            <h2 className="text-2xl font-semibold text-gray-800">Send Message</h2>
+          </div>
 
-          <div className="mb-6">
-            <h3 className="text-lg font-medium mb-2">
-              Recipients ({selectedUsers.length})
-            </h3>
-            <div className="max-h-60 overflow-y-auto border rounded-md p-2">
-              {selectedUsers.map((user, index) => (
-                <div key={index} className="flex items-center mb-2 p-2 hover:bg-gray-50">
-                  <Check className="w-4 h-4 text-green-500 mr-2" />
-                  <span className="text-sm">
-                    {user[1]} {user[3]} ({user[4]}) {/* Adjust indices based on your data structure */}
-                  </span>
-                </div>
-              ))}
+          <div className="space-y-6">
+            {/* Message Type Selection */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Message Type
+              </label>
+              <div className="flex space-x-4">
+                <button
+                  onClick={() => setMessageType("text")}
+                  className={`px-4 py-2 rounded-md ${
+                    messageType === "text"
+                      ? "bg-indigo-600 text-white"
+                      : "bg-gray-100 text-gray-700"
+                  }`}
+                >
+                  Text
+                </button>
+                <button
+                  onClick={() => setMessageType("image")}
+                  className={`px-4 py-2 rounded-md ${
+                    messageType === "image"
+                      ? "bg-indigo-600 text-white"
+                      : "bg-gray-100 text-gray-700"
+                  }`}
+                >
+                  Image
+                </button>
+                <button
+                  onClick={() => setMessageType("video")}
+                  className={`px-4 py-2 rounded-md ${
+                    messageType === "video"
+                      ? "bg-indigo-600 text-white"
+                      : "bg-gray-100 text-gray-700"
+                  }`}
+                >
+                  Video
+                </button>
+              </div>
             </div>
-          </div>
 
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Subject
-            </label>
-            <input
-              type="text"
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-              className="w-full rounded-md border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-              placeholder="Message subject"
-            />
-          </div>
+            {/* File Upload */}
+            {messageType !== "text" && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Upload {messageType === "image" ? "Image" : "Video"}
+                </label>
+                <input
+                  type="file"
+                  accept={messageType === "image" ? "image/*" : "video/*"}
+                  onChange={handleFileChange}
+                  className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-600 hover:file:bg-indigo-100"
+                />
+                {filePreviews.length > 0 && (
+                  <div className="mt-4 flex flex-wrap gap-4">
+                    {filePreviews.map((preview, index) => (
+                      <div key={index} className="relative">
+                        {messageType === "image" ? (
+                          <img
+                            src={preview}
+                            alt={`Preview ${index + 1}`}
+                            className="h-24 w-24 object-cover rounded-lg"
+                          />
+                        ) : (
+                          <video
+                            src={preview}
+                            className="h-24 w-24 object-cover rounded-lg"
+                            controls
+                          />
+                        )}
+                        <button
+                          onClick={() => removeFile(index)}
+                          className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Message
-            </label>
-            <textarea
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              rows={6}
-              className="w-full rounded-md border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-              placeholder="Type your message here..."
-            />
-          </div>
+            {/* Template Selection */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Select Template
+              </label>
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+              >
+                <option value="utility">Utility</option>
+                <option value="marketing">Marketing</option>
+                <option value="authentication">Authentication</option>
+              </select>
+              <div className="mt-4">
+                <TemplateList
+                  selectedCategory={category}
+                  onTemplateSelect={setSelectedTemplate}
+                />
+              </div>
+            </div>
 
-          <div className="flex justify-end space-x-3">
-            <button
-              onClick={() => navigate('/message-center')}
-              className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-500"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSendMessage}
-              disabled={loading || !message.trim()}
-              className={`px-4 py-2 text-white rounded-md ${loading || !message.trim() ? 'bg-blue-300 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
-            >
-              {loading ? 'Sending...' : 'Send Message'}
-            </button>
+            {/* Test Mode Toggle */}
+            <div className="flex items-center">
+              <input
+                type="checkbox"
+                id="testMode"
+                checked={isTestMessage}
+                onChange={(e) => setIsTestMessage(e.target.checked)}
+                className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+              />
+              <label htmlFor="testMode" className="ml-2 block text-sm text-gray-900">
+                Test Mode
+              </label>
+            </div>
+
+            {/* Test Mobile Number */}
+            {isTestMessage && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Test Mobile Number
+                </label>
+                <input
+                  type="tel"
+                  value={testMobileNumber}
+                  onChange={(e) => setTestMobileNumber(e.target.value)}
+                  placeholder="Enter mobile number"
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                />
+              </div>
+            )}
+
+            {/* Send Button */}
+            <div className="flex justify-end">
+              <button
+                onClick={handleSendMessage}
+                disabled={!selectedTemplate || (isTestMessage ? !testMobileNumber : selectedRows.length === 0)}
+                className="flex items-center px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Send className="h-5 w-5 mr-2" />
+                Send Message
+              </button>
+            </div>
+
+            {/* Results Display */}
+            {results.length > 0 && (
+              <div className="mt-6">
+                <h3 className="text-lg font-medium text-gray-900 mb-4">
+                  Sending Results
+                </h3>
+                <div className="space-y-2">
+                  {results.map((result, index) => (
+                    <div
+                      key={index}
+                      className={`flex items-center p-3 rounded-md ${
+                        result.status === "success"
+                          ? "bg-green-50 text-green-700"
+                          : "bg-red-50 text-red-700"
+                      }`}
+                    >
+                      {result.status === "success" ? (
+                        <Check className="h-5 w-5 mr-2" />
+                      ) : (
+                        <X className="h-5 w-5 mr-2" />
+                      )}
+                      <span>
+                        {result.phone}: {result.status}
+                        {result.error && ` - ${result.error}`}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

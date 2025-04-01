@@ -9,7 +9,8 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import cookieParser from 'cookie-parser';
-import spreadsheetRouter from './routes/spreadsheet.js'
+import spreadsheetRouter from './routes/spreadsheet.js';
+import whatsappRoutes from "./routes/whatsapp.js";
 
 
 dotenv.config();
@@ -40,6 +41,7 @@ const sheets = google.sheets({ version: 'v4', auth });
 const drive = google.drive({ version: 'v3', auth });
 
 app.use('/api', spreadsheetRouter); // Use the router with the '/api' prefix
+app.use('/api', whatsappRoutes);
 
 // Function to share spreadsheet and set permissions
 async function shareSpreadsheet(spreadsheetId) {
@@ -745,8 +747,7 @@ app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
 
-// // Create Group
-// app.post('/api/create-group', async (req, res) => {
+
 //   try {
 //     const { groupName, description, selectedFields, spreadsheetId } = req.body;
 
