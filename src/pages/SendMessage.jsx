@@ -24,6 +24,11 @@ function SendMessage() {
   const [isTestMessage, setIsTestMessage] = useState(false);
   const [selectedRows, setSelectedRows] = useState([]);
   const [spreadsheetData, setSpreadsheetData] = useState([]);
+  const [isTemplateReady, setIsTemplateReady] = useState(false);
+
+  useEffect(() => {
+    console.log("Selected Template Updated:", selectedTemplate);
+  }, [selectedTemplate]);
 
   useEffect(() => {
     const fetchHeaders = async () => {
@@ -68,66 +73,208 @@ function SendMessage() {
     setFilePreviews(validFiles.map((file) => URL.createObjectURL(file)));
   };
 
+  // const handleSendMessage = async () => {
+  //   if (!selectedTemplate) {
+  //     toast.error("Please select a template first");
+  //     return;
+  //   }
+
+  //   console.log("Sending template:", selectedTemplate);
+
+  //   if (!isTestMessage && selectedRows.length === 0) {
+  //     toast.error("Please select recipients");
+  //     return;
+  //   }
+
+  //   try {
+  //     // Find phone number column
+  //     const phoneColumnVariants = ["phone number", "phone", "mobile number", "mobile"];
+  //     let phoneIndex = -1;
+  //     for (let variant of phoneColumnVariants) {
+  //       phoneIndex = headers.findIndex(header => 
+  //         header.toLowerCase().includes(variant.toLowerCase())
+  //       );
+  //       if (phoneIndex !== -1) break;
+  //     }
+
+  //     if (phoneIndex === -1) {
+  //       toast.error("Could not find phone number column in spreadsheet");
+  //       return;
+  //     }
+
+  //     // Prepare recipients
+  //     let formattedRecipients = isTestMessage 
+  //       ? [{ phone: testMobileNumber.trim(), data: {} }]
+  //       : selectedRows.map(row => ({
+  //           phone: row[phoneIndex],
+  //           data: Object.fromEntries(headers.map((header, index) => [header, row[index] || ""]))
+  //         }));
+
+  //     const formData = new FormData();
+  //     formData.append("header", header);
+  //     formData.append("message", message);
+  //     formData.append("recipients", JSON.stringify(formattedRecipients));
+  //     formData.append("template", JSON.stringify(selectedTemplate));
+  //     files.forEach((file) => formData.append("files", file));
+
+  //     const response = await api.post('/api/send-whatsapp', formData, {
+  //       headers: { "Content-Type": "multipart/form-data" }
+  //     });
+
+  //     if (response.data.success) {
+  //       setResults(response.data.results);
+  //       toast.success(response.data.message);
+        
+  //       // Clear form after successful send
+  //       setMessage("");
+  //       setHeader("");
+  //       setFiles([]);
+  //       setFilePreviews([]);
+  //       setSelectedTemplate(null);
+  //       setSelectedRows([]);
+  //     }
+  //   } catch (error) {
+  //     console.error('Error sending messages:', error);
+  //     toast.error(error.response?.data?.message || 'Failed to send messages');
+  //   }
+  // };
+
+
   const handleSendMessage = async () => {
     if (!selectedTemplate) {
-      toast.error("Please select a template first");
+      toast.error("Please select a template first.");
       return;
     }
 
-    if (!isTestMessage && selectedRows.length === 0) {
-      toast.error("Please select recipients");
+    console.log("Sending template:", selectedTemplate);
+
+    if (isTestMessage && !testMobileNumber.trim()) {
+      toast.error("Please enter a mobile number for the test message.");
+      return;
+    }
+
+    if (!isTestMessage && (!selectedRows || selectedRows.length === 0)) {
+      toast.error("Please select at least one recipient.");
       return;
     }
 
     try {
-      // Find phone number column
-      const phoneColumnVariants = ["phone number", "phone", "mobile number", "mobile"];
+
+      const phoneColumnVariants = [
+        "phone number",
+        "phone",
+        "mobile number",
+        "mobilenumber",
+        "mobile no",
+        "mobileno",
+        "mob",
+        "MOB",
+        "phone no",
+      ];
       let phoneIndex = -1;
+
       for (let variant of phoneColumnVariants) {
-        phoneIndex = headers.findIndex(header => 
-          header.toLowerCase().includes(variant.toLowerCase())
+        phoneIndex = headers.findIndex(
+          (header) => header.toLowerCase() === variant.toLowerCase()
         );
-        if (phoneIndex !== -1) break;
+        if (phoneIndex !== -1) {
+          break;
+        }
       }
 
       if (phoneIndex === -1) {
-        toast.error("Could not find phone number column in spreadsheet");
+        toast.error("No valid phone/mobile number column found.");
         return;
       }
 
-      // Prepare recipients
-      let formattedRecipients = isTestMessage 
-        ? [{ phone: testMobileNumber.trim(), data: {} }]
-        : selectedRows.map(row => ({
+      let formattedRecipients = [];
+
+      if (isTestMessage) {
+        formattedRecipients = [{ phone: testMobileNumber.trim(), data: {} }];
+      } else {
+        formattedRecipients = spreadsheetData
+          .filter((row) => {
+            let phone = row[phoneIndex]?.trim() || "";
+
+            return selectedRows.some(
+              (selected) => selected[phoneIndex]?.trim() === phone
+            );
+          })
+          .map((row) => ({
             phone: row[phoneIndex],
-            data: Object.fromEntries(headers.map((header, index) => [header, row[index] || ""]))
+            data: Object.fromEntries(
+              headers.map((header, index) => [header, row[index] || ""])
+            ),
           }));
+      }
+
+      if (formattedRecipients.length === 0) {
+        toast.error("No valid recipients available.");
+        return;
+      }
+
+          console.log("Selected Template:", selectedTemplate);
+
+          // Ensure the template has the required structure
+          if (
+            !selectedTemplate.template ||
+            !selectedTemplate.template.name ||
+            !selectedTemplate.template.language ||
+            !selectedTemplate.template.components ||
+            !Array.isArray(selectedTemplate.template.components)
+          ) {
+            toast.error("Invalid template structure. Please check the template.");
+            return;
+          }
+        
+          // Flatten the template structure if necessary
+          const validatedTemplate = {
+            name: selectedTemplate.template.name,
+            language: selectedTemplate.template.language,
+            components: selectedTemplate.template.components,
+          };
+        
+          // Log the validated template to verify its structure
+          console.log("Validated Template:", validatedTemplate);
 
       const formData = new FormData();
       formData.append("header", header);
       formData.append("message", message);
       formData.append("recipients", JSON.stringify(formattedRecipients));
-      formData.append("template", JSON.stringify(selectedTemplate));
+      formData.append("template", JSON.stringify(validatedTemplate));
       files.forEach((file) => formData.append("files", file));
 
-      const response = await api.post('/api/send-whatsapp', formData, {
-        headers: { "Content-Type": "multipart/form-data" }
+      console.log("Payload being sent:", {
+        header,
+        message,
+        recipients: formattedRecipients,
+        template: validatedTemplate,
+        files,
+      });
+
+      for (let [key, value] of formData.entries()) {
+        console.log(key, value);
+      }
+
+      const response = await axios.post('/api/send-whatsapp', formData, {
+        headers: { "Content-Type": "multipart/form-data" },
       });
 
       if (response.data.success) {
         setResults(response.data.results);
+        // setShowReportButton(true);
         toast.success(response.data.message);
-        
-        // Clear form after successful send
         setMessage("");
         setHeader("");
         setFiles([]);
         setFilePreviews([]);
         setSelectedTemplate(null);
         setSelectedRows([]);
+      } else {
+        throw new Error(response.data.error || "Failed to send message.");
       }
     } catch (error) {
-      console.error('Error sending messages:', error);
+      console.error(`Error sending messages:`, error);
       toast.error(error.response?.data?.message || 'Failed to send messages');
     }
   };
@@ -137,6 +284,13 @@ function SendMessage() {
     setFilePreviews(prev => prev.filter((_, i) => i !== index));
   };
 
+
+  const handleTemplateSelect = (template) => {
+    console.log("Selected Template:", template);
+    setSelectedTemplate(template);
+    setIsTemplateReady(true); // Mark template as ready
+  };
+  
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
@@ -245,10 +399,10 @@ function SendMessage() {
                 <option value="authentication">Authentication</option>
               </select>
               <div className="mt-4">
-                <TemplateList
-                  selectedCategory={category}
-                  onTemplateSelect={setSelectedTemplate}
-                />
+              <TemplateList
+  selectedCategory={category}
+  onTemplateSelect={handleTemplateSelect}
+/>
               </div>
             </div>
 
@@ -284,14 +438,16 @@ function SendMessage() {
 
             {/* Send Button */}
             <div className="flex justify-end">
-              <button
-                onClick={handleSendMessage}
-                disabled={!selectedTemplate || (isTestMessage ? !testMobileNumber : selectedRows.length === 0)}
-                className="flex items-center px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <Send className="h-5 w-5 mr-2" />
-                Send Message
-              </button>
+            <button
+  onClick={handleSendMessage}
+  // disabled={!isTemplateReady || (isTestMessage ? !testMobileNumber : selectedRows.length === 0)}
+  className={`flex items-center px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 ${
+    !isTemplateReady ? 'opacity-50 cursor-not-allowed' : ''
+  }`}
+>
+  <Send className="h-5 w-5 mr-2" />
+  Send Message
+</button>
             </div>
 
             {/* Results Display */}

@@ -50,22 +50,27 @@ const TemplateList = ({ selectedCategory, onTemplateSelect }) => {
       console.error('Invalid template structure');
       return;
     }
-
+  
     setSelectedTemplate(template);
-    const hasParameters = template.template.components?.some(
-      (comp) => comp.parameters && comp.parameters.length > 0
-    );
-
+    
+    // Check if any component has parameters with placeholders
+    const hasParameters = template.template.components?.some(component => {
+      return component.parameters?.some(param => {
+        return param.text && /\{\{\d+\}\}/.test(param.text);
+      });
+    });
+  
     if (hasParameters) {
       setShowParameterModal(true);
     } else {
-      onTemplateSelect(template);
+      onTemplateSelect(template); // Directly select template if no parameters
     }
   };
 
   const handleDelete = async (templateId, templateName) => {
     if (window.confirm('Are you sure you want to delete this template?')) {
       try {
+        console.log("before delete:", templateId)
         const response = await api.delete(
           `/api/delete-template/${templateId}/${templateName}`
         );

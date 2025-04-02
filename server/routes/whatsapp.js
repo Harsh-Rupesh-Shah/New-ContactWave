@@ -42,40 +42,236 @@ const formatPhoneNumber = (number) => {
 };
 
 // Send WhatsApp message
-router.post('/send-whatsapp', upload.array('files'), async (req, res) => {
+// router.post('/send-whatsapp', upload.array('files'), async (req, res) => {
+//   const { header, message, recipients, template } = req.body;
+//   const files = req.files;
+
+//   let parsedTemplate;
+//   try {
+//     parsedTemplate = JSON.parse(template);
+//   } catch (error) {
+//     console.error('Template Parse Error:', error);
+//     return res.status(400).json({ 
+//       error: "Invalid template format",
+//       details: error.message
+//     });
+//   }
+
+//   if (!parsedTemplate.name || !parsedTemplate.components) {
+//     return res.status(400).json({
+//       error: "Invalid template structure",
+//       requiredFields: ["name", "components"]
+//     });
+//   }
+
+//   let parsedRecipients;
+//   try {
+//     parsedRecipients = JSON.parse(recipients);
+//   } catch (error) {
+//     return res.status(400).json({ 
+//       error: "Invalid recipients format" 
+//     });
+//   }
+
+//   const validRecipients = parsedRecipients
+//     .map((recipient) => {
+//       const formattedPhone = formatPhoneNumber(recipient.phone);
+//       if (!formattedPhone) {
+//         console.log(`Invalid phone number: ${recipient.phone}`);
+//         return null;
+//       }
+//       return { ...recipient, phone: formattedPhone };
+//     })
+//     .filter((recipient) => recipient !== null);
+
+//   if (validRecipients.length === 0) {
+//     return res.status(400).json({ error: "No valid recipients found" });
+//   }
+
+//   try {
+//     const results = [];
+//     const fileUrls = await Promise.all(
+//       (files || []).map(async (file) => {
+//         try {
+//           const result = await cloudinary.uploader.upload(file.path, {
+//             resource_type: "auto"
+//           });
+//           return result.secure_url;
+//         } catch (error) {
+//           console.error("Error uploading to Cloudinary:", error);
+//           throw error;
+//         }
+//       })
+//     );
+
+//     await Promise.all(
+//       validRecipients.map(async (recipient) => {
+//         try {
+//           let messageOptions = {
+//             messaging_product: "whatsapp",
+//             to: recipient.phone,
+//             type: "template",
+//             template: {
+//               name: parsedTemplate.name,
+//               language: { code: parsedTemplate.language?.code || "en_US" },
+//               components: parsedTemplate.components.map(component => {
+//                 if (component.type === "HEADER" && files?.length > 0) {
+//                   return {
+//                     type: "header",
+//                     parameters: [
+//                       { 
+//                         type: files[0].mimetype.startsWith("image/") ? "image" : "video",
+//                         [files[0].mimetype.startsWith("image/") ? "image" : "video"]: { 
+//                           link: fileUrls[0] 
+//                         }
+//                       }
+//                     ]
+//                   };
+//                 }
+
+//                 return {
+//                   type: component.type,
+//                   parameters: component.parameters.map(param => {
+//                     if (param.type === "text") {
+//                       const match = param.text.match(/\{\{(\d+)\}\}/);
+//                       if (match) {
+//                         const value = recipient.data[`param${match[1]}`] || param.text;
+//                         return { type: "text", text: value };
+//                       }
+//                     }
+//                     return param;
+//                   })
+//                 };
+//               })
+//             }
+//           };
+
+//           const response = await axios.post(WHATSAPP_API_URL, messageOptions, {
+//             headers: {
+//               Authorization: `Bearer ${ACCESS_TOKEN}`,
+//               "Content-Type": "application/json"
+//             }
+//           });
+
+//           results.push({
+//             phone: recipient.phone,
+//             status: "success",
+//             messageId: response.data?.messages?.[0]?.id
+//           });
+//         } catch (error) {
+//           console.error(`Error sending WhatsApp message to ${recipient.phone}:`, error);
+//           results.push({
+//             phone: recipient.phone,
+//             status: "failed",
+//             error: error.response?.data || error.message
+//           });
+//         }
+//       })
+//     );
+
+//     res.status(200).json({
+//       success: true,
+//       message: `WhatsApp messages sent to ${validRecipients.length} recipients`,
+//       results
+//     });
+//   } catch (error) {
+//     console.error("Error sending WhatsApp messages:", error);
+//     res.status(500).json({ 
+//       success: false, 
+//       error: "Failed to send WhatsApp messages" 
+//     });
+//   }
+// });
+
+router.post("/send-whatsapp", upload.array("files"), async (req, res) => {
   const { header, message, recipients, template } = req.body;
-  const files = req.files;
-
   let parsedTemplate;
-  try {
-    parsedTemplate = JSON.parse(template);
-  } catch (error) {
-    console.error('Template Parse Error:', error);
-    return res.status(400).json({ 
-      error: "Invalid template format",
-      details: error.message
-    });
-  }
+    try {
+      parsedTemplate = JSON.parse(template);
+      console.log('Parsed Template:', JSON.stringify(parsedTemplate, null, 2));
+    } catch (error) {
+      console.error('Template Parse Error:', error);
+      return res.status(400).json({ 
+        error: "Invalid template format",
+        details: error.message,
+        receivedTemplate: template
+      });
+    }
 
-  if (!parsedTemplate.name || !parsedTemplate.components) {
-    return res.status(400).json({
-      error: "Invalid template structure",
-      requiredFields: ["name", "components"]
-    });
-  }
+    // 2. Validate template structure
+    if (!parsedTemplate.name || !parsedTemplate.components) {
+      return res.status(400).json({
+        error: "Invalid template structure",
+        requiredFields: ["name", "components"],
+        receivedTemplate: parsedTemplate
+      });
+    }
 
+    const processedComponents = parsedTemplate.components.map(component => {
+        if (!component.parameters) return component;
+        
+        const newParameters = [];
+        
+        component.parameters.forEach(param => {
+          if (param.type === "text") {
+            // Extract all parameter placeholders (like {{1}}, {{2}})
+            const matches = param.text.match(/\{\{(\d+)\}\}/g) || [];
+            
+            if (matches.length > 0) {
+              // For each placeholder, create a separate parameter
+              matches.forEach(match => {
+                const index = match.replace(/\D/g, '');
+                newParameters.push({
+                  type: "text",
+                  text: param.text.includes(match) ? match : param.text
+                });
+              });
+            } else {
+              // If no placeholders, keep the original text
+              newParameters.push({
+                type: "text",
+                text: param.text
+              });
+            }
+          } else {
+            // Keep non-text parameters as-is
+            newParameters.push(param);
+          }
+        });
+        
+        return {
+          type: component.type,
+          parameters: newParameters
+        };
+      });
+  
+  const files = req.files;
+  console.log("header", req.body);
+  console.log("Recipients received:", recipients);
   let parsedRecipients;
+
   try {
     parsedRecipients = JSON.parse(recipients);
   } catch (error) {
-    return res.status(400).json({ 
-      error: "Invalid recipients format" 
-    });
+    return res
+      .status(400)
+      .json({ error: "Invalid recipients format. Expected a JSON array." });
   }
+
+  const formatPhoneNumber = (number) => {
+    if (!number) return null;
+    let formattedNumber = String(number).trim().replace(/\D+/g, "");
+    if (formattedNumber.length === 10) {
+      formattedNumber = `91${formattedNumber}`;
+    }
+    const phoneRegex = /^91\d{10}$/;
+    return phoneRegex.test(formattedNumber) ? formattedNumber : null;
+  };
 
   const validRecipients = parsedRecipients
     .map((recipient) => {
       const formattedPhone = formatPhoneNumber(recipient.phone);
+      console.log("Original:", recipient.phone, "Formatted:", formattedPhone);
       if (!formattedPhone) {
         console.log(`Invalid phone number: ${recipient.phone}`);
         return null;
@@ -85,16 +281,16 @@ router.post('/send-whatsapp', upload.array('files'), async (req, res) => {
     .filter((recipient) => recipient !== null);
 
   if (validRecipients.length === 0) {
-    return res.status(400).json({ error: "No valid recipients found" });
+    return res.status(400).json({ error: "No valid recipients found." });
   }
 
   try {
     const results = [];
     const fileUrls = await Promise.all(
-      (files || []).map(async (file) => {
+      files.map(async (file) => {
         try {
           const result = await cloudinary.uploader.upload(file.path, {
-            resource_type: "auto"
+            resource_type: "auto",
           });
           return result.secure_url;
         } catch (error) {
@@ -106,64 +302,138 @@ router.post('/send-whatsapp', upload.array('files'), async (req, res) => {
 
     await Promise.all(
       validRecipients.map(async (recipient) => {
+        console.log(`Sending message to: ${recipient.phone}`);
         try {
-          let messageOptions = {
-            messaging_product: "whatsapp",
-            to: recipient.phone,
-            type: "template",
-            template: {
-              name: parsedTemplate.name,
-              language: { code: parsedTemplate.language?.code || "en_US" },
-              components: parsedTemplate.components.map(component => {
-                if (component.type === "HEADER" && files?.length > 0) {
-                  return {
-                    type: "header",
-                    parameters: [
-                      { 
-                        type: files[0].mimetype.startsWith("image/") ? "image" : "video",
-                        [files[0].mimetype.startsWith("image/") ? "image" : "video"]: { 
-                          link: fileUrls[0] 
-                        }
-                      }
-                    ]
-                  };
-                }
+          let messageOptions;
+          
 
-                return {
-                  type: component.type,
-                  parameters: component.parameters.map(param => {
+          if (files.length > 0) {
+            const fileType = files[0].mimetype.startsWith("image/")
+              ? "image"
+              : "video";
+
+            if (fileType === "image") {
+              messageOptions = {
+                messaging_product: "whatsapp",
+                to: recipient.phone,
+                type: "template",
+                template: {
+                  name: "text_image",
+                  language: { code: "en_US" },
+                  components: [
+                    {
+                      type: "header",
+                      parameters: [
+                        { type: "image", image: { link: fileUrls[0] } },
+                      ],
+                    },
+                    {
+                      type: "body",
+                      parameters: [{ type: "text", text: `${message}` }],
+                    },
+                  ],
+                },
+              };
+            } else if (fileType === "video") {
+              messageOptions = {
+                messaging_product: "whatsapp",
+                to: recipient.phone,
+                type: "template",
+                template: {
+                  name: "text_video",
+                  language: { code: "en_US" },
+                  components: [
+                    {
+                      type: "header",
+                      parameters: [
+                        { type: "video", video: { link: fileUrls[0] } },
+                      ],
+                    },
+                    {
+                      type: "body",
+                      parameters: [{ type: "text", text: `${message}` }],
+                    },
+                  ],
+                },
+              };
+            }
+          } else {
+            messageOptions = {
+                messaging_product: "whatsapp",
+                to: recipient.phone,
+                type: "template",
+                // template: {
+                //   name: parsedTemplate.name,
+                //   language: { code: parsedTemplate.language?.code || "en_US" }, // Optional chaining for safety
+                // //   components: parsedTemplate.components.map((component) => ({
+                // //     type: component.type,
+                // //     parameters: component.parameters || [],
+                // //   })),
+                // // components: []
+                // components: processedComponents
+                // },
+                template: {
+                name: parsedTemplate.name,
+                language: { code: parsedTemplate.language?.code || "en_US" },
+                components: processedComponents.map(component => {
+                  // Replace placeholders with actual values from recipient data
+                  const parameters = component.parameters.map(param => {
                     if (param.type === "text") {
+                      // Check if the text contains a placeholder
                       const match = param.text.match(/\{\{(\d+)\}\}/);
                       if (match) {
-                        const value = recipient.data[`param${match[1]}`] || param.text;
-                        return { type: "text", text: value };
+                        const placeholder = match[0];
+                        const index = match[1];
+                        // Replace with actual data (you might need to adjust this based on your data structure)
+                        const value = recipient.data[`param${index}`] || placeholder;
+                        return {
+                          type: "text",
+                          text: value
+                        };
                       }
                     }
                     return param;
-                  })
-                };
-              })
-            }
-          };
+                  });
+                  
+                  return {
+                    type: component.type,
+                    parameters: parameters
+                  };
+                })
+              }
+              };
+          }
 
-          const response = await axios.post(WHATSAPP_API_URL, messageOptions, {
-            headers: {
-              Authorization: `Bearer ${ACCESS_TOKEN}`,
-              "Content-Type": "application/json"
+          console.log(
+            "Final Message Payload:",
+            JSON.stringify(messageOptions, null, 2)
+          );
+
+          const response = await axios.post(
+            process.env.WHATSAPP_API_ID,
+            messageOptions,
+            {
+              headers: {
+                Authorization: `Bearer ${ACCESS_TOKEN}`,
+                "Content-Type": "application/json",
+              },
             }
-          });
+          );
 
           results.push({
-            phone: recipient.phone,
+            ...recipient,
             status: "success",
-            messageId: response.data?.messages?.[0]?.id
+            messageId: response.data?.messages?.[0]?.id,
           });
         } catch (error) {
-          console.error(`Error sending WhatsApp message to ${recipient.phone}:`, error);
+          console.error(
+            `Error sending WhatsApp message to ${recipient.phone}:`,
+            error.message
+          );
           results.push({
-            phone: recipient.phone,
+            ...recipient,
             status: "failed",
-            error: error.response?.data || error.message
+            error: error.response?.data || error.message,
           });
         }
       })
@@ -171,15 +441,14 @@ router.post('/send-whatsapp', upload.array('files'), async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: `WhatsApp messages sent to ${validRecipients.length} recipients`,
-      results
+      message: `WhatsApp messages sent successfully to ${validRecipients.length} recipients!`,
+      results,
     });
   } catch (error) {
-    console.error("Error sending WhatsApp messages:", error);
-    res.status(500).json({ 
-      success: false, 
-      error: "Failed to send WhatsApp messages" 
-    });
+    console.error("Error sending WhatsApp messages:", error.message);
+    res
+      .status(500)
+      .json({ success: false, error: "Failed to send WhatsApp messages." });
   }
 });
 
@@ -196,6 +465,7 @@ router.get('/get-all-templates', async (req, res) => {
     );
 
     const formattedTemplates = response.data.data.map(template => ({
+      id: template.id,
       messaging_product: "whatsapp",
       type: "template",
       category: template.category || "utility",
