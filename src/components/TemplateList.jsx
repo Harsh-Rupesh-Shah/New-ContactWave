@@ -46,8 +46,10 @@ const TemplateList = ({ selectedCategory, onTemplateSelect }) => {
   };
 
   const handleTemplateClick = (template) => {
+    console.log("Template clicked:", template);
     if (!template || !template.template) {
       console.error('Invalid template structure');
+      toast.error('Invalid template structure');
       return;
     }
   
@@ -61,9 +63,11 @@ const TemplateList = ({ selectedCategory, onTemplateSelect }) => {
     });
   
     if (hasParameters) {
+      console.log("Template has parameters, showing modal");
       setShowParameterModal(true);
     } else {
-      onTemplateSelect(template); // Directly select template if no parameters
+      console.log("Template has no parameters, selecting directly");
+      onTemplateSelect(template);
     }
   };
 
