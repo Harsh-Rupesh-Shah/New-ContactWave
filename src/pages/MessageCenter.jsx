@@ -171,8 +171,6 @@ function MessageCenter() {
     }
   };
 
-
-
   const handleCombineGroups = async () => {
     try {
       if (!newCombinedGroupName.trim()) {
@@ -312,7 +310,6 @@ function MessageCenter() {
       }
     }
   };
-  ;
 
   // Original function for Show Groups modal
   const handleGroupCheckboxChange = (groupId) => {
