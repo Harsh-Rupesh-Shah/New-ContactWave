@@ -45,12 +45,19 @@ const ParameterModal = ({ open, onClose, template, onSendWithParameters }) => {
 
   if (!open || !template) return null;
 
-  const handleParameterChange = (key, value) => {
-    setParameterValues(prev => ({
-      ...prev,
-      [key]: value
-    }));
-  };
+  // In ParameterModal.js
+const handleParameterChange = (key, value) => {
+  // Validate input
+  if (value.match(/[\n\t]/)) {
+    toast.error("Parameters cannot contain newlines or tabs");
+    return;
+  }
+  
+  setParameterValues(prev => ({
+    ...prev,
+    [key]: value
+  }));
+};
 
   const handleSubmit = () => {
     const processedComponents = template.template.components.map(component => {

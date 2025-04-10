@@ -105,7 +105,10 @@ const TemplateList = ({ selectedCategory, onTemplateSelect }) => {
       console.error('Invalid template with parameters');
       return;
     }
-    onTemplateSelect(templateWithParams);
+    onTemplateSelect({
+      ...templateWithParams,
+      template: templateWithParams.template // Ensure this maintains the correct structure
+    });
     setShowParameterModal(false);
   };
 
