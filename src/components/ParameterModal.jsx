@@ -59,45 +59,44 @@ const handleParameterChange = (key, value) => {
   }));
 };
 
-  const handleSubmit = () => {
-    const processedComponents = template.template.components.map(component => {
-      if (component.type === 'FOOTER') {
-        return component;
-      }
+const handleSubmit = () => {
+  // Create a deep copy of the template
+  const updatedTemplate = JSON.parse(JSON.stringify(template));
 
-      if (!component.parameters) return component;
-      
-      const parameters = component.parameters.map(param => {
-        if (!param.text) return param;
-        
-        let newText = param.text;
-        componentParameters
-          .filter(p => p.componentType === component.type)
-          .forEach(({ placeholder, key }) => {
-            const value = parameterValues[key] || '';
-            newText = newText.replace(new RegExp(placeholder, 'g'), value);
-          });
-        
-        return {
-          ...param,
-          text: newText
-        };
-      });
-      
-      return {
-        ...component,
-        parameters
-      };
-    });
+  updatedTemplate.template.components = template.template.components.map(component => {
+    if (component.type === 'FOOTER') {
+      return component;
+    }
 
-    onSendWithParameters({
-      ...template,
-      template: {
-        ...template.template,
-        components: processedComponents
+    if (!component.parameters) return component;
+    
+    // Transform parameters into separate entries for WhatsApp API
+    const parameters = component.parameters.map(param => {
+      if (!param.text) return param;
+      
+      // For each parameter placeholder, create a separate parameter entry
+      const relevantParams = componentParameters
+        .filter(p => p.componentType === component.type)
+        .sort((a, b) => parseInt(a.index) - parseInt(b.index));
+
+      if (relevantParams.length > 0) {
+        return relevantParams.map(({ key }) => ({
+          type: "text",
+          text: parameterValues[key] || ''
+        }));
       }
-    });
-  };
+      
+      return param;
+    }).flat(); // Flatten the array of parameters
+
+    return {
+      ...component,
+      parameters
+    };
+  });
+
+  onSendWithParameters(updatedTemplate);
+};
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">

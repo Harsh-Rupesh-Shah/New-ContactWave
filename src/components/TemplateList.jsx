@@ -54,7 +54,7 @@ const TemplateList = ({ selectedCategory, onTemplateSelect }) => {
     }
   
     setSelectedTemplate(template);
-    
+  
     // Check if any component has parameters with placeholders
     const hasParameters = template.template.components?.some(component => {
       return component.parameters?.some(param => {
@@ -67,9 +67,10 @@ const TemplateList = ({ selectedCategory, onTemplateSelect }) => {
       setShowParameterModal(true);
     } else {
       console.log("Template has no parameters, selecting directly");
-      onTemplateSelect(template);
+      onTemplateSelect({ ...template, hasParameters: 0 }); // Pass hasParameters as 0
     }
   };
+  
 
   const handleDelete = async (templateId, templateName) => {
     if (window.confirm('Are you sure you want to delete this template?')) {
@@ -107,10 +108,12 @@ const TemplateList = ({ selectedCategory, onTemplateSelect }) => {
     }
     onTemplateSelect({
       ...templateWithParams,
-      template: templateWithParams.template // Ensure this maintains the correct structure
+      template: templateWithParams.template,
+      hasParameters: 1 // Pass hasParameters as 1
     });
     setShowParameterModal(false);
   };
+  
 
   if (loading) {
     return <div className="text-center py-4">Loading templates...</div>;

@@ -62,10 +62,10 @@ function SendMessage() {
         toast.error("Please select a template first");
         return;
       }
-
+  
       console.log("Starting send message process...");
       console.log("Selected template:", selectedTemplate);
-
+  
       // Get recipients
       let recipients;
       if (isTestMessage) {
@@ -79,7 +79,7 @@ function SendMessage() {
           toast.error("No recipients selected");
           return;
         }
-        
+  
         // Map selected rows to recipients format
         recipients = selectedRows.map(row => ({
           phone: row[4], // Assuming phone number is at index 4
@@ -93,36 +93,37 @@ function SendMessage() {
           }
         }));
       }
-
+  
       console.log("Prepared recipients:", recipients);
-
+  
       // Prepare form data
       const formData = new FormData();
       formData.append("header", header);
       formData.append("message", message);
       formData.append("recipients", JSON.stringify(recipients));
       formData.append("template", JSON.stringify(selectedTemplate));
+      formData.append("hasParameters", selectedTemplate.hasParameters); // Include hasParameters
       files.forEach((file) => formData.append("files", file));
-
+  
       // Log FormData contents
       for (let [key, value] of formData.entries()) {
         console.log(`FormData entry - ${key}:`, value);
       }
-
+  
       // Make the API call
       console.log("Making API call to send-whatsapp...");
       const response = await api.post('/api/send-whatsapp', formData, {
-        headers: { 
+        headers: {
           "Content-Type": "multipart/form-data"
         }
       });
-
+  
       console.log("API response:", response.data);
-
+  
       if (response.data.success) {
         setResults(response.data.results);
         toast.success(response.data.message);
-        
+  
         // Clear form
         setMessage("");
         setHeader("");
@@ -130,7 +131,7 @@ function SendMessage() {
         setFilePreviews([]);
         setSelectedTemplate(null);
         localStorage.removeItem('selectedUsersForMessage');
-        
+  
         // Navigate back after success
         setTimeout(() => {
           navigate('/message-center');
@@ -143,6 +144,7 @@ function SendMessage() {
       toast.error(error.response?.data?.message || 'Failed to send messages');
     }
   };
+  
 
   const removeFile = (index) => {
     setFiles(prev => prev.filter((_, i) => i !== index));

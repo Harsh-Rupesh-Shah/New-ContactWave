@@ -42,7 +42,9 @@ const formatPhoneNumber = (number) => {
 };
 
 router.post("/send-whatsapp", upload.array("files"), async (req, res) => {
-  const { header, message, recipients, template } = req.body;
+  const { header, message, recipients, template, hasParameters } = req.body;
+  console.log("Received hasParameters:", hasParameters); // Log the value of hasParameters
+
   let parsedTemplate;
   try {
     parsedTemplate = JSON.parse(template);
@@ -56,17 +58,16 @@ router.post("/send-whatsapp", upload.array("files"), async (req, res) => {
     });
   }
 
-  // 2. Validate template structure
-  // 2. Validate template structure
-if (!parsedTemplate.template?.name || !parsedTemplate.template?.components) {
-  return res.status(400).json({
-    error: "Invalid template structure",
-    requiredFields: ["template.name", "template.components"],
-    receivedTemplate: parsedTemplate,
-  });
-}
+  // Validate template structure
+  if (!parsedTemplate.template?.name || !parsedTemplate.template?.components) {
+    return res.status(400).json({
+      error: "Invalid template structure",
+      requiredFields: ["template.name", "template.components"],
+      receivedTemplate: parsedTemplate,
+    });
+  }
 
-console.log("Received template structure:", JSON.stringify(parsedTemplate, null, 2));
+  console.log("Received template structure:", JSON.stringify(parsedTemplate, null, 2));
 
   const files = req.files;
   console.log("header", req.body);
@@ -131,7 +132,7 @@ console.log("Received template structure:", JSON.stringify(parsedTemplate, null,
 
           const processedComponents = parsedTemplate.template.components.map(component => {
             if (component.type !== 'BODY') return component;
-            
+
             // For BODY components, ensure no newlines in individual parameters
             const parameters = component.parameters.map(param => {
               if (param.type === 'text') {
@@ -140,17 +141,17 @@ console.log("Received template structure:", JSON.stringify(parsedTemplate, null,
                   .replace(/\n/g, ' ')  // Replace newlines with spaces
                   .replace(/\s+/g, ' ') // Collapse multiple spaces
                   .trim();
-                
+
                 // Replace placeholders with recipient data
                 if (recipient.data) {
                   for (const [key, value] of Object.entries(recipient.data)) {
                     if (key.startsWith('param')) {
-                      const placeholder = `{{${key.replace('param', '')}}`;
+                      const placeholder = `{{${key.replace('param', '')}}}`;
                       cleanText = cleanText.replace(new RegExp(placeholder, 'g'), value || '');
                     }
                   }
                 }
-                
+
                 return {
                   ...param,
                   text: cleanText
@@ -158,7 +159,7 @@ console.log("Received template structure:", JSON.stringify(parsedTemplate, null,
               }
               return param;
             });
-            
+
             return {
               ...component,
               parameters
@@ -216,27 +217,28 @@ console.log("Received template structure:", JSON.stringify(parsedTemplate, null,
               };
             }
           } else {
-            // messageOptions = {
-            //   messaging_product: "whatsapp",
-            //   to: recipient.phone,
-            //   type: "template",
-            //   template: {
-            //     name: parsedTemplate.template.name,
-            //     language: { code: parsedTemplate.template.language?.code || "en_US" },
-            
-            //   }
-            // }
-
-            messageOptions = {
-              messaging_product: "whatsapp",
-              to: recipient.phone,
-              type: "template",
-              template: {
-                name: parsedTemplate.template.name,
-                language: { code: parsedTemplate.template.language?.code || "en_US" },
-                components: processedComponents
-              }
-            };
+            if (hasParameters === '1') {
+              messageOptions = {
+                messaging_product: "whatsapp",
+                to: recipient.phone,
+                type: "template",
+                template: {
+                  name: parsedTemplate.template.name,
+                  language: { code: parsedTemplate.template.language?.code || "en_US" },
+                  components: processedComponents
+                }
+              };
+            } else {
+              messageOptions = {
+                messaging_product: "whatsapp",
+                to: recipient.phone,
+                type: "template",
+                template: {
+                  name: parsedTemplate.template.name,
+                  language: { code: parsedTemplate.template.language?.code || "en_US" },
+                }
+              };
+            }
           }
 
           console.log(
@@ -286,6 +288,7 @@ console.log("Received template structure:", JSON.stringify(parsedTemplate, null,
       .json({ success: false, error: "Failed to send WhatsApp messages." });
   }
 });
+
 
 // Get all templates
 router.get("/get-all-templates", async (req, res) => {
